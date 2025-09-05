@@ -1,7 +1,6 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+// Stdio transport is now in src/transport/stdio.ts
+// HTTP transport is now in src/transport/http.ts
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
@@ -13,9 +12,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fg from "fast-glob";
-import { pipeline, env } from "@xenova/transformers";
-import express from "express";
-import { randomUUID } from "node:crypto";
+import { configureTransformersCache, initEmbedder, embedText, cosine } from "./embeddings.js";
+import { startHttpTransport } from "./transport/http.js";
+import { startStdioTransport } from "./transport/stdio.js";
 
 type Doc = {
   id: string;
@@ -36,22 +35,9 @@ try {
 }
 
 // Configure transformers cache directory ASAP, before any model/pipeline is created
-try {
-  const cacheDir =
-    (process.env.TRANSFORMERS_CACHE || "").trim() ||
-    path.resolve(process.cwd(), ".cache/transformers");
-  await fs.mkdir(cacheDir, { recursive: true }).catch(() => {
-    /* noop */
-  });
-  // Tell @xenova/transformers to use this cache
-  env.useBrowserCache = false; // ensure filesystem cache in Node
-  env.cacheDir = cacheDir;
-  // Optional: allow local models if the user places them there
-  env.allowLocalModels = true;
-  console.error(`[MCP] Using TRANSFORMERS cache at: ${env.cacheDir}`);
-} catch (e) {
-  console.error("[MCP] Failed to set TRANSFORMERS cache directory:", e);
-}
+await configureTransformersCache().catch((e) =>
+  console.error("[MCP] Failed to set TRANSFORMERS cache directory:", e),
+);
 
 const ROOT = process.env.REPO_ROOT?.trim() || "C:/path/to/your/repository";
 const ALLOWED_EXT = process.env.ALLOWED_EXT?.split(",")
@@ -100,40 +86,9 @@ function splitChunks(text: string, size = 800, overlap = 120) {
   return out;
 }
 
-// Cosine similarity
-function cosine(a: Float32Array, b: Float32Array) {
-  let dot = 0,
-    na = 0,
-    nb = 0;
-  const n = Math.min(a.length, b.length);
-  for (let i = 0; i < n; i++) {
-    const x = a[i],
-      y = b[i];
-    dot += x * y;
-    na += x * x;
-    nb += y * y;
-  }
-  return dot / (Math.sqrt(na) * Math.sqrt(nb) + 1e-10);
-}
+// ...cosine similarity imported from embeddings.ts
 
 let docs: Doc[] = [];
-let embedder: any;
-
-// Initialize local embedding pipeline
-async function initEmbedder() {
-  // Lightweight multilingual sentence-embedding model
-  // You can try "Xenova/intfloat-multilingual-e5-small" if available, at the cost of speed.
-  //embedder = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2");
-  //embedder = await pipeline("feature-extraction", "Xenova/all-MiniLM-L12-v2");
-  embedder = await pipeline("feature-extraction", "Xenova/bge-base-en-v1.5");
-}
-
-// Compute an embedding vector for a text (mean pooling + normalization)
-async function embedText(text: string): Promise<Float32Array> {
-  const output = await embedder(text, { pooling: "mean", normalize: true });
-  return output.data as Float32Array;
-}
-
 // Build the in-memory index (chunks + embeddings)
 async function buildIndex() {
   docs = [];
@@ -262,100 +217,7 @@ const wantsHttp = (() => {
 })();
 
 if (!wantsHttp) {
-  const server = createServer();
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  await startStdioTransport(createServer);
 } else {
-  const app = express();
-  app.use(express.json({ limit: "2mb" }));
-
-  const port = Number(process.env.MCP_PORT ?? 3000);
-  const host = (process.env.HOST ?? "127.0.0.1").trim();
-  const defaultAllowedHosts = (() => {
-    const base = new Set<string>([
-      "127.0.0.1",
-      `127.0.0.1:${port}`,
-      "localhost",
-      `localhost:${port}`,
-      host,
-      `${host}:${port}`,
-    ]);
-    return Array.from(base);
-  })();
-
-  // sessionId -> transport
-  const transports: Record<string, StreamableHTTPServerTransport> = {};
-
-  app.post("/mcp", async (req: express.Request, res: express.Response) => {
-    try {
-      const sessionId = (req.headers["mcp-session-id"] as string | undefined) ?? undefined;
-      let transport: StreamableHTTPServerTransport | undefined = sessionId
-        ? transports[sessionId]
-        : undefined;
-
-      if (!transport && !sessionId && isInitializeRequest(req.body as any)) {
-        transport = new StreamableHTTPServerTransport({
-          sessionIdGenerator: () => randomUUID(),
-          onsessioninitialized: (sid: string) => {
-            transports[sid] = transport!;
-          },
-          // Stronger local security defaults
-          enableDnsRebindingProtection:
-            (process.env.ENABLE_DNS_REBINDING_PROTECTION ?? "true") !== "false",
-          allowedHosts: (process.env.ALLOWED_HOSTS ?? defaultAllowedHosts.join(","))
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean),
-        });
-
-        const server = createServer();
-        transport.onclose = () => {
-          if (transport?.sessionId) delete transports[transport.sessionId];
-          try {
-            server.close();
-          } catch {
-            /* noop */
-          }
-        };
-        await server.connect(transport);
-      }
-
-      if (!transport) {
-        res.status(400).json({
-          jsonrpc: "2.0",
-          error: { code: -32000, message: "Bad Request: No valid session ID provided" },
-          id: null,
-        });
-        return;
-      }
-
-      await transport.handleRequest(req as any, res as any, req.body);
-    } catch (err) {
-      console.error("[MCP] HTTP POST error:", err);
-      if (!res.headersSent) {
-        res.status(500).json({
-          jsonrpc: "2.0",
-          error: { code: -32603, message: "Internal server error" },
-          id: null,
-        });
-      }
-    }
-  });
-
-  const handleSessionRequest = async (req: express.Request, res: express.Response) => {
-    const sessionId = (req.headers["mcp-session-id"] as string | undefined) ?? undefined;
-    const transport = sessionId ? transports[sessionId] : undefined;
-    if (!transport) {
-      res.status(400).send("Invalid or missing session ID");
-      return;
-    }
-    await transport.handleRequest(req as any, res as any);
-  };
-
-  app.get("/mcp", handleSessionRequest);
-  app.delete("/mcp", handleSessionRequest);
-
-  app.listen(port, host, () => {
-    console.error(`[MCP] Streamable HTTP listening at http://${host}:${port}/mcp`);
-  });
+  await startHttpTransport(createServer);
 }
