@@ -6,7 +6,7 @@ import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
   ErrorCode,
-  McpError
+  McpError,
 } from "@modelcontextprotocol/sdk/types.js";
 import dotenv from "dotenv";
 import fs from "node:fs/promises";
@@ -31,12 +31,18 @@ try {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
   dotenv.config({ path: path.resolve(__dirname, "../.env") });
-} catch { }
+} catch {
+  // noop: optional local .env near build may not exist
+}
 
 // Configure transformers cache directory ASAP, before any model/pipeline is created
 try {
-  const cacheDir = (process.env.TRANSFORMERS_CACHE || "").trim() || path.resolve(process.cwd(), ".cache/transformers");
-  await fs.mkdir(cacheDir, { recursive: true }).catch(() => { });
+  const cacheDir =
+    (process.env.TRANSFORMERS_CACHE || "").trim() ||
+    path.resolve(process.cwd(), ".cache/transformers");
+  await fs.mkdir(cacheDir, { recursive: true }).catch(() => {
+    /* noop */
+  });
   // Tell @xenova/transformers to use this cache
   env.useBrowserCache = false; // ensure filesystem cache in Node
   env.cacheDir = cacheDir;
@@ -48,19 +54,40 @@ try {
 }
 
 const ROOT = process.env.REPO_ROOT?.trim() || "C:/path/to/your/repository";
-const ALLOWED_EXT = (process.env.ALLOWED_EXT?.split(",")
-  .map(s => s.trim())
+const ALLOWED_EXT = process.env.ALLOWED_EXT?.split(",")
+  .map((s) => s.trim())
   .filter(Boolean) ?? [
-    // Common code/text extensions (customize via ALLOWED_EXT)
-    "ts", "tsx", "js", "jsx",
-    "py", "cs", "java", "kt", "kts",
-    "go", "rs", "cpp", "c", "h", "hpp",
-    "rb", "php", "swift", "scala",
-    "md", "txt",
-    "gradle", "groovy",
-    "json", "yaml", "yml", "xml",
-    "proto", "properties"
-  ]);
+  // Common code/text extensions (customize via ALLOWED_EXT)
+  "ts",
+  "tsx",
+  "js",
+  "jsx",
+  "py",
+  "cs",
+  "java",
+  "kt",
+  "kts",
+  "go",
+  "rs",
+  "cpp",
+  "c",
+  "h",
+  "hpp",
+  "rb",
+  "php",
+  "swift",
+  "scala",
+  "md",
+  "txt",
+  "gradle",
+  "groovy",
+  "json",
+  "yaml",
+  "yml",
+  "xml",
+  "proto",
+  "properties",
+];
 
 // Split text into overlapping chunks
 function splitChunks(text: string, size = 800, overlap = 120) {
@@ -75,10 +102,13 @@ function splitChunks(text: string, size = 800, overlap = 120) {
 
 // Cosine similarity
 function cosine(a: Float32Array, b: Float32Array) {
-  let dot = 0, na = 0, nb = 0;
+  let dot = 0,
+    na = 0,
+    nb = 0;
   const n = Math.min(a.length, b.length);
   for (let i = 0; i < n; i++) {
-    const x = a[i], y = b[i];
+    const x = a[i],
+      y = b[i];
     dot += x * y;
     na += x * x;
     nb += y * y;
@@ -107,7 +137,7 @@ async function embedText(text: string): Promise<Float32Array> {
 // Build the in-memory index (chunks + embeddings)
 async function buildIndex() {
   docs = [];
-  const patterns = ALLOWED_EXT.map(ext => `**/*.${ext}`);
+  const patterns = ALLOWED_EXT.map((ext) => `**/*.${ext}`);
   const files = await fg(patterns, { cwd: ROOT, dot: false, absolute: true });
   console.error(`[MCP] Loading files from ${ROOT} ... (${files.length} files)`);
 
@@ -121,12 +151,16 @@ async function buildIndex() {
           id: `${idCounter++}`,
           path: path.relative(ROOT, file),
           chunk: idx,
-          text: chunk
+          text: chunk,
         });
       });
-    } catch { }
+    } catch {
+      /* noop: ignore unreadable files */
+    }
   }
-  console.error(`[MCP] Created ${docs.length} chunks. Generating embeddings... (first run may take a while)`);
+  console.error(
+    `[MCP] Created ${docs.length} chunks. Generating embeddings... (first run may take a while)`,
+  );
 
   for (let i = 0; i < docs.length; i++) {
     if (i % 200 === 0) console.error(`[MCP] Embedding ${i}/${docs.length}`);
@@ -145,7 +179,7 @@ function ensureWithinRoot(relPath: string) {
 function createServer() {
   const server = new Server(
     { name: "mcp-rag-server", version: "0.3.0" },
-    { capabilities: { tools: {} } }
+    { capabilities: { tools: {} } },
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -153,15 +187,16 @@ function createServer() {
       tools: [
         {
           name: "rag_query",
-          description: "Semantically search files under REPO_ROOT and return relevant snippets (path, snippet, score).",
+          description:
+            "Semantically search files under REPO_ROOT and return relevant snippets (path, snippet, score).",
           inputSchema: {
             type: "object",
             properties: {
               query: { type: "string" },
-              top_k: { type: "number" }
+              top_k: { type: "number" },
             },
-            required: ["query"]
-          }
+            required: ["query"],
+          },
         },
         {
           name: "read_file",
@@ -171,12 +206,12 @@ function createServer() {
             properties: {
               path: { type: "string" },
               startLine: { type: "number" },
-              endLine: { type: "number" }
+              endLine: { type: "number" },
             },
-            required: ["path"]
-          }
-        }
-      ]
+            required: ["path"],
+          },
+        },
+      ],
     };
   });
 
@@ -186,12 +221,12 @@ function createServer() {
       if (!query) throw new McpError(ErrorCode.InvalidRequest, "Missing query");
 
       const qEmb = await embedText(String(query));
-      const scored = docs.map(d => ({ d, s: cosine(d.emb!, qEmb) }));
+      const scored = docs.map((d) => ({ d, s: cosine(d.emb!, qEmb) }));
       scored.sort((a, b) => b.s - a.s);
-      const top = scored.slice(0, Math.max(1, Math.min(50, top_k))).map(r => ({
+      const top = scored.slice(0, Math.max(1, Math.min(50, top_k))).map((r) => ({
         path: r.d.path,
         score: Number(r.s.toFixed(4)),
-        snippet: r.d.text
+        snippet: r.d.text,
       }));
       return { toolResult: { matches: top } };
     }
@@ -204,7 +239,7 @@ function createServer() {
       if (startLine != null || endLine != null) {
         const lines = content.split(/\r?\n/);
         const s = Math.max(0, (startLine ?? 1) - 1);
-        const e = Math.min(lines.length, (endLine ?? lines.length));
+        const e = Math.min(lines.length, endLine ?? lines.length);
         return { toolResult: lines.slice(s, e).join("\n") };
       }
       return { toolResult: content };
@@ -254,7 +289,9 @@ if (!wantsHttp) {
   app.post("/mcp", async (req: express.Request, res: express.Response) => {
     try {
       const sessionId = (req.headers["mcp-session-id"] as string | undefined) ?? undefined;
-      let transport: StreamableHTTPServerTransport | undefined = sessionId ? transports[sessionId] : undefined;
+      let transport: StreamableHTTPServerTransport | undefined = sessionId
+        ? transports[sessionId]
+        : undefined;
 
       if (!transport && !sessionId && isInitializeRequest(req.body as any)) {
         transport = new StreamableHTTPServerTransport({
@@ -263,17 +300,22 @@ if (!wantsHttp) {
             transports[sid] = transport!;
           },
           // Stronger local security defaults
-          enableDnsRebindingProtection: (process.env.ENABLE_DNS_REBINDING_PROTECTION ?? "true") !== "false",
+          enableDnsRebindingProtection:
+            (process.env.ENABLE_DNS_REBINDING_PROTECTION ?? "true") !== "false",
           allowedHosts: (process.env.ALLOWED_HOSTS ?? defaultAllowedHosts.join(","))
             .split(",")
-            .map(s => s.trim())
+            .map((s) => s.trim())
             .filter(Boolean),
         });
 
         const server = createServer();
         transport.onclose = () => {
           if (transport?.sessionId) delete transports[transport.sessionId];
-          try { server.close(); } catch { }
+          try {
+            server.close();
+          } catch {
+            /* noop */
+          }
         };
         await server.connect(transport);
       }
@@ -282,7 +324,7 @@ if (!wantsHttp) {
         res.status(400).json({
           jsonrpc: "2.0",
           error: { code: -32000, message: "Bad Request: No valid session ID provided" },
-          id: null
+          id: null,
         });
         return;
       }
@@ -294,7 +336,7 @@ if (!wantsHttp) {
         res.status(500).json({
           jsonrpc: "2.0",
           error: { code: -32603, message: "Internal server error" },
-          id: null
+          id: null,
         });
       }
     }

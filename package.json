@@ -8,20 +8,29 @@
     "start": "node build/index.js",
     "dev": "tsc --watch",
     "inspector": "npx @modelcontextprotocol/inspector node build/index.js",
-    "inspector:http": "powershell -NoProfile -Command \"$env:ENABLE_HTTP_MCP_TRANSPORT=1; npx @modelcontextprotocol/inspector http://localhost:3000/mcp --transport http\""
+    "inspector:http": "powershell -NoProfile -Command \"$env:ENABLE_HTTP_MCP_TRANSPORT=1; npx @modelcontextprotocol/inspector http://localhost:3000/mcp --transport http\"",
+    "lint": "eslint . --ext .ts",
+    "lint:fix": "eslint . --ext .ts --fix",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",
     "@xenova/transformers": "^2.15.0",
-    "fast-glob": "^3.3.2",
+    "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "cors": "^2.8.5"
+    "fast-glob": "^3.3.2"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "typescript": "^5.5.0",
+    "@eslint/js": "^9.35.0",
+    "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
-    "@types/cors": "^2.8.17"
+    "@types/node": "^22.0.0",
+    "eslint": "^9.35.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.6.2",
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.42.0"
   }
 }
