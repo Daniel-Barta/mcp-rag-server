@@ -8,7 +8,7 @@
     "start": "node build/index.js",
     "dev": "tsc --watch",
     "inspector": "npx @modelcontextprotocol/inspector node build/index.js",
-    "inspector:http": "npx @modelcontextprotocol/inspector http://localhost:3000/mcp --transport http"
+    "inspector:http": "powershell -NoProfile -Command \"$env:ENABLE_HTTP_MCP_TRANSPORT=1; npx @modelcontextprotocol/inspector http://localhost:3000/mcp --transport http\""
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",

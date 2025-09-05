@@ -31,12 +31,12 @@ try {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
   dotenv.config({ path: path.resolve(__dirname, "../.env") });
-} catch {}
+} catch { }
 
 // Configure transformers cache directory ASAP, before any model/pipeline is created
 try {
   const cacheDir = (process.env.TRANSFORMERS_CACHE || "").trim() || path.resolve(process.cwd(), ".cache/transformers");
-  await fs.mkdir(cacheDir, { recursive: true }).catch(() => {});
+  await fs.mkdir(cacheDir, { recursive: true }).catch(() => { });
   // Tell @xenova/transformers to use this cache
   env.useBrowserCache = false; // ensure filesystem cache in Node
   env.cacheDir = cacheDir;
@@ -259,7 +259,7 @@ if (!wantsHttp) {
       if (!transport && !sessionId && isInitializeRequest(req.body as any)) {
         transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => randomUUID(),
-      onsessioninitialized: (sid: string) => {
+          onsessioninitialized: (sid: string) => {
             transports[sid] = transport!;
           },
           // Stronger local security defaults
@@ -273,7 +273,7 @@ if (!wantsHttp) {
         const server = createServer();
         transport.onclose = () => {
           if (transport?.sessionId) delete transports[transport.sessionId];
-          try { server.close(); } catch {}
+          try { server.close(); } catch { }
         };
         await server.connect(transport);
       }
@@ -287,7 +287,7 @@ if (!wantsHttp) {
         return;
       }
 
-  await transport.handleRequest(req as any, res as any, req.body);
+      await transport.handleRequest(req as any, res as any, req.body);
     } catch (err) {
       console.error("[MCP] HTTP POST error:", err);
       if (!res.headersSent) {
