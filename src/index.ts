@@ -1,5 +1,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
@@ -12,6 +14,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fg from "fast-glob";
 import { pipeline, env } from "@xenova/transformers";
+import express from "express";
+import { randomUUID } from "node:crypto";
 
 type Doc = {
   id: string;
@@ -138,81 +142,178 @@ function ensureWithinRoot(relPath: string) {
   return abs;
 }
 
-const server = new Server(
-  { name: "mcp-rag-server", version: "0.2.0-emb" },
-  { capabilities: { tools: {} } }
-);
+function createServer() {
+  const server = new Server(
+    { name: "mcp-rag-server", version: "0.3.0" },
+    { capabilities: { tools: {} } }
+  );
 
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return {
-    tools: [
-      {
-        name: "rag_query",
-        description: "Semantically search files under REPO_ROOT and return relevant snippets (path, snippet, score).",
-        inputSchema: {
-          type: "object",
-          properties: {
-            query: { type: "string" },
-            top_k: { type: "number" }
-          },
-          required: ["query"]
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    return {
+      tools: [
+        {
+          name: "rag_query",
+          description: "Semantically search files under REPO_ROOT and return relevant snippets (path, snippet, score).",
+          inputSchema: {
+            type: "object",
+            properties: {
+              query: { type: "string" },
+              top_k: { type: "number" }
+            },
+            required: ["query"]
+          }
+        },
+        {
+          name: "read_file",
+          description: "Read a specific file (optionally a line range).",
+          inputSchema: {
+            type: "object",
+            properties: {
+              path: { type: "string" },
+              startLine: { type: "number" },
+              endLine: { type: "number" }
+            },
+            required: ["path"]
+          }
         }
-      },
-      {
-        name: "read_file",
-        description: "Read a specific file (optionally a line range).",
-        inputSchema: {
-          type: "object",
-          properties: {
-            path: { type: "string" },
-            startLine: { type: "number" },
-            endLine: { type: "number" }
-          },
-          required: ["path"]
-        }
-      }
-    ]
-  };
-});
+      ]
+    };
+  });
 
-server.setRequestHandler(CallToolRequestSchema, async (req) => {
-  if (req.params.name === "rag_query") {
-    const { query, top_k = 5 } = (req.params.arguments ?? {}) as any;
-    if (!query) throw new McpError(ErrorCode.InvalidRequest, "Missing query");
+  server.setRequestHandler(CallToolRequestSchema, async (req) => {
+    if (req.params.name === "rag_query") {
+      const { query, top_k = 5 } = (req.params.arguments ?? {}) as any;
+      if (!query) throw new McpError(ErrorCode.InvalidRequest, "Missing query");
 
-    const qEmb = await embedText(String(query));
-    const scored = docs.map(d => ({
-      d,
-      s: cosine(d.emb!, qEmb)
-    }));
-    scored.sort((a, b) => b.s - a.s);
-    const top = scored.slice(0, Math.max(1, Math.min(50, top_k))).map(r => ({
-      path: r.d.path,
-      score: Number(r.s.toFixed(4)),
-      snippet: r.d.text
-    }));
-    return { toolResult: { matches: top } };
-  }
-
-  if (req.params.name === "read_file") {
-    const { path: rel, startLine, endLine } = (req.params.arguments ?? {}) as any;
-    if (!rel) throw new McpError(ErrorCode.InvalidRequest, "Missing path");
-    const abs = ensureWithinRoot(rel);
-    const content = await fs.readFile(abs, "utf8");
-    if (startLine != null || endLine != null) {
-      const lines = content.split(/\r?\n/);
-      const s = Math.max(0, (startLine ?? 1) - 1);
-      const e = Math.min(lines.length, (endLine ?? lines.length));
-      return { toolResult: lines.slice(s, e).join("\n") };
+      const qEmb = await embedText(String(query));
+      const scored = docs.map(d => ({ d, s: cosine(d.emb!, qEmb) }));
+      scored.sort((a, b) => b.s - a.s);
+      const top = scored.slice(0, Math.max(1, Math.min(50, top_k))).map(r => ({
+        path: r.d.path,
+        score: Number(r.s.toFixed(4)),
+        snippet: r.d.text
+      }));
+      return { toolResult: { matches: top } };
     }
-    return { toolResult: content };
-  }
 
-  throw new McpError(ErrorCode.MethodNotFound, "Unknown method");
-});
+    if (req.params.name === "read_file") {
+      const { path: rel, startLine, endLine } = (req.params.arguments ?? {}) as any;
+      if (!rel) throw new McpError(ErrorCode.InvalidRequest, "Missing path");
+      const abs = ensureWithinRoot(rel);
+      const content = await fs.readFile(abs, "utf8");
+      if (startLine != null || endLine != null) {
+        const lines = content.split(/\r?\n/);
+        const s = Math.max(0, (startLine ?? 1) - 1);
+        const e = Math.min(lines.length, (endLine ?? lines.length));
+        return { toolResult: lines.slice(s, e).join("\n") };
+      }
+      return { toolResult: content };
+    }
 
-const transport = new StdioServerTransport();
+    throw new McpError(ErrorCode.MethodNotFound, "Unknown method");
+  });
+
+  return server;
+}
 
 await initEmbedder();
 await buildIndex();
-await server.connect(transport);
+
+// Choose transport: stdio (default) or Streamable HTTP
+// Controlled via .env: ENABLE_HTTP_MCP_TRANSPORT=true|1 to enable HTTP transport
+const wantsHttp = (() => {
+  const v = (process.env.ENABLE_HTTP_MCP_TRANSPORT ?? "").trim().toLowerCase();
+  return v === "true" || v === "1" || v === "yes" || v === "on";
+})();
+
+if (!wantsHttp) {
+  const server = createServer();
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+} else {
+  const app = express();
+  app.use(express.json({ limit: "2mb" }));
+
+  const port = Number(process.env.MCP_PORT ?? 3000);
+  const host = (process.env.HOST ?? "127.0.0.1").trim();
+  const defaultAllowedHosts = (() => {
+    const base = new Set<string>([
+      "127.0.0.1",
+      `127.0.0.1:${port}`,
+      "localhost",
+      `localhost:${port}`,
+      host,
+      `${host}:${port}`,
+    ]);
+    return Array.from(base);
+  })();
+
+  // sessionId -> transport
+  const transports: Record<string, StreamableHTTPServerTransport> = {};
+
+  app.post("/mcp", async (req: express.Request, res: express.Response) => {
+    try {
+      const sessionId = (req.headers["mcp-session-id"] as string | undefined) ?? undefined;
+      let transport: StreamableHTTPServerTransport | undefined = sessionId ? transports[sessionId] : undefined;
+
+      if (!transport && !sessionId && isInitializeRequest(req.body as any)) {
+        transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => randomUUID(),
+      onsessioninitialized: (sid: string) => {
+            transports[sid] = transport!;
+          },
+          // Stronger local security defaults
+          enableDnsRebindingProtection: (process.env.ENABLE_DNS_REBINDING_PROTECTION ?? "true") !== "false",
+          allowedHosts: (process.env.ALLOWED_HOSTS ?? defaultAllowedHosts.join(","))
+            .split(",")
+            .map(s => s.trim())
+            .filter(Boolean),
+        });
+
+        const server = createServer();
+        transport.onclose = () => {
+          if (transport?.sessionId) delete transports[transport.sessionId];
+          try { server.close(); } catch {}
+        };
+        await server.connect(transport);
+      }
+
+      if (!transport) {
+        res.status(400).json({
+          jsonrpc: "2.0",
+          error: { code: -32000, message: "Bad Request: No valid session ID provided" },
+          id: null
+        });
+        return;
+      }
+
+  await transport.handleRequest(req as any, res as any, req.body);
+    } catch (err) {
+      console.error("[MCP] HTTP POST error:", err);
+      if (!res.headersSent) {
+        res.status(500).json({
+          jsonrpc: "2.0",
+          error: { code: -32603, message: "Internal server error" },
+          id: null
+        });
+      }
+    }
+  });
+
+  const handleSessionRequest = async (req: express.Request, res: express.Response) => {
+    const sessionId = (req.headers["mcp-session-id"] as string | undefined) ?? undefined;
+    const transport = sessionId ? transports[sessionId] : undefined;
+    if (!transport) {
+      res.status(400).send("Invalid or missing session ID");
+      return;
+    }
+    await transport.handleRequest(req as any, res as any);
+  };
+
+  app.get("/mcp", handleSessionRequest);
+  app.delete("/mcp", handleSessionRequest);
+
+  app.listen(port, host, () => {
+    console.error(`[MCP] Streamable HTTP listening at http://${host}:${port}/mcp`);
+  });
+}

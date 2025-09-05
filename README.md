@@ -21,6 +21,24 @@ export REPO_ROOT="/path/to/your-repo"; node build/index.js
 Optionally set a model cache to speed up subsequent runs:
 export TRANSFORMERS_CACHE="/path/to/cache"
 
+### Streamable HTTP mode
+Run the MCP server as an HTTP endpoint (Streamable HTTP transport):
+
+- Windows PowerShell
+
+```
+npm run build
+$env:REPO_ROOT="C:\path\to\your-repo"; $env:ENABLE_HTTP_MCP_TRANSPORT="true"; npm run start
+```
+
+- macOS/Linux (bash/zsh)
+
+```
+export REPO_ROOT="/path/to/your-repo"; ENABLE_HTTP_MCP_TRANSPORT=true npm run start
+```
+
+Default HTTP bind: http://127.0.0.1:3000/mcp. Override with `HOST` and `MCP_PORT` envs.
+
 ## Test with MCP Inspector (without VS)
 Use the MCP Inspector to exercise the server locally and try the tools without Visual Studio.
 
@@ -28,7 +46,14 @@ Windows PowerShell:
 
 ```
 npm run build
-$env:REPO_ROOT="C:\path\to\your-repo"; npx @modelcontextprotocol/inspector node .\build\index.js
+$env:REPO_ROOT="C:\path\to\your-repo"; npx @modelcontextprotocol/inspector node .\\build\\index.js
+```
+
+Streamable HTTP via Inspector (Windows):
+
+```
+npm run build
+$env:REPO_ROOT="C:\path\to\your-repo"; $env:ENABLE_HTTP_MCP_TRANSPORT="true"; npx @modelcontextprotocol/inspector http://localhost:3000/mcp --transport http
 ```
 
 macOS/Linux (bash/zsh):
@@ -36,6 +61,12 @@ macOS/Linux (bash/zsh):
 ```
 export REPO_ROOT="/path/to/your-repo"
 npx @modelcontextprotocol/inspector node build/index.js
+```
+
+Streamable HTTP (macOS/Linux):
+
+```
+export REPO_ROOT="/path/to/your-repo"; ENABLE_HTTP_MCP_TRANSPORT=true npx @modelcontextprotocol/inspector http://localhost:3000/mcp --transport http
 ```
 
 Notes:
@@ -89,6 +120,7 @@ Supported variables:
 - `REPO_ROOT` (required): path to the repository to index.
 - `TRANSFORMERS_CACHE` (optional): cache folder for model files.
 - `ALLOWED_EXT` (optional): comma-separated list of file extensions to index.
+ - `ENABLE_HTTP_MCP_TRANSPORT` (optional): set to true/1/yes/on to run via Streamable HTTP.
 
 ## Visual Studio integration (MCP)
 Copy `example.mcp.json` to:
@@ -96,6 +128,19 @@ Copy `example.mcp.json` to:
 - your solution root as `.mcp.json` (recommended for teams)
 
 Adjust the paths in "command"/"args" and the `REPO_ROOT` env.
+
+For Streamable HTTP, use a config entry like:
+
+```
+{
+	"servers": {
+		"mcp-rag-server": {
+			"type": "streamable-http",
+			"url": "http://127.0.0.1:3000/mcp"
+		}
+	}
+}
+```
 
 Open VS -> Copilot Chat -> switch to Agent mode -> enable the "mcp-rag-server" and its tools (you will be asked to grant permission on first use).
 
