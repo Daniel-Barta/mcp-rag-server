@@ -137,6 +137,11 @@ Supported variables:
 - `TRANSFORMERS_CACHE` (optional): cache folder for model files.
 - `ALLOWED_EXT` (optional): comma-separated list of file extensions to index.
 - `ENABLE_HTTP_MCP_TRANSPORT` (optional): set to true/1/yes/on to run via Streamable HTTP.
+- `MODEL_NAME` (optional): override the default embedding model (`Xenova/bge-base-en-v1.5`). Example: `MODEL_NAME=Xenova/bge-small-en-v1.5` or any compatible sentence embedding model available to `@xenova/transformers`.
+- `HOST` (optional, HTTP mode): bind host (default `127.0.0.1`).
+- `MCP_PORT` (optional, HTTP mode): TCP port (default `3000`).
+- `ENABLE_DNS_REBINDING_PROTECTION` (optional, HTTP mode): defaults to `true`; set to `false` to disable host allow‑list checks.
+- `ALLOWED_HOSTS` (optional, HTTP mode): comma-separated list of hosts allowed when DNS rebinding protection is enabled. Defaults include localhost and 127.0.0.1 with/without port.
 
 ## Visual Studio integration (MCP)
 

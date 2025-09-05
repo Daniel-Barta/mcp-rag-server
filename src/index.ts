@@ -12,7 +12,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fg from "fast-glob";
-import { configureTransformersCache, initEmbedder, embedText, cosine } from "./embeddings.js";
+import { Embeddings } from "./embeddings.js";
 import { startHttpTransport } from "./transport/http.js";
 import { startStdioTransport } from "./transport/stdio.js";
 
@@ -35,7 +35,7 @@ try {
 }
 
 // Configure transformers cache directory ASAP, before any model/pipeline is created
-await configureTransformersCache().catch((e) =>
+await Embeddings.configureCache().catch((e) =>
   console.error("[MCP] Failed to set TRANSFORMERS cache directory:", e),
 );
 
@@ -89,6 +89,8 @@ function splitChunks(text: string, size = 800, overlap = 120) {
 // ...cosine similarity imported from embeddings.ts
 
 let docs: Doc[] = [];
+const embeddings = new Embeddings();
+await embeddings.init();
 // Build the in-memory index (chunks + embeddings)
 async function buildIndex() {
   docs = [];
@@ -119,7 +121,7 @@ async function buildIndex() {
 
   for (let i = 0; i < docs.length; i++) {
     if (i % 200 === 0) console.error(`[MCP] Embedding ${i}/${docs.length}`);
-    docs[i].emb = await embedText(docs[i].text);
+    docs[i].emb = await embeddings.embed(docs[i].text);
   }
   console.error(`[MCP] Embeddings ready.`);
 }
@@ -175,8 +177,8 @@ function createServer() {
       const { query, top_k = 5 } = (req.params.arguments ?? {}) as any;
       if (!query) throw new McpError(ErrorCode.InvalidRequest, "Missing query");
 
-      const qEmb = await embedText(String(query));
-      const scored = docs.map((d) => ({ d, s: cosine(d.emb!, qEmb) }));
+      const qEmb = await embeddings.embed(String(query));
+      const scored = docs.map((d) => ({ d, s: Embeddings.cosine(d.emb!, qEmb) }));
       scored.sort((a, b) => b.s - a.s);
       const top = scored.slice(0, Math.max(1, Math.min(50, top_k))).map((r) => ({
         path: r.d.path,
@@ -206,7 +208,6 @@ function createServer() {
   return server;
 }
 
-await initEmbedder();
 await buildIndex();
 
 // Choose transport: stdio (default) or Streamable HTTP
