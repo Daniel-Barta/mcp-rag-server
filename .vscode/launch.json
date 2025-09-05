@@ -1,0 +1,47 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug MCP server (direct)",
+      "program": "${workspaceFolder}/build/index.js",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "preLaunchTask": "npm: build",
+      "skipFiles": ["<node_internals>/**"],
+      "outFiles": ["${workspaceFolder}/build/**/*.js"],
+      "sourceMaps": true,
+      "envFile": "${workspaceFolder}/.env"
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug via MCP Inspector",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "@modelcontextprotocol/inspector",
+        "node",
+        "--inspect-brk",
+        "${workspaceFolder}/build/index.js"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "preLaunchTask": "npm: build",
+      "skipFiles": ["<node_internals>/**"],
+      "outFiles": ["${workspaceFolder}/build/**/*.js"],
+      "sourceMaps": true,
+      "envFile": "${workspaceFolder}/.env"
+    },
+    {
+      "type": "node",
+      "request": "attach",
+      "name": "Attach to running server",
+      "port": 9229,
+      "restart": false,
+      "skipFiles": ["<node_internals>/**"],
+      "outFiles": ["${workspaceFolder}/build/**/*.js"],
+      "sourceMaps": true
+    }
+  ]
+}

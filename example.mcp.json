@@ -1,0 +1,15 @@
+{
+  "servers": {
+    "kotlin-rag": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "C:/path/to/mcp-kotlin-rag/build/index.js"
+      ],
+      "env": {
+        "KOTLIN_ROOT": "C:/path/to/your/kotlin/repo",
+        "TRANSFORMERS_CACHE": "C:/path/to/cache"
+      }
+    }
+  }
+}
