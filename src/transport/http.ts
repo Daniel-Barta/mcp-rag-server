@@ -52,9 +52,15 @@ export async function startHttpTransport(createServer: () => Server) {
         });
 
         const server = createServer();
+        let closing = false;
         transport.onclose = () => {
+          if (closing) return; // idempotent guard to avoid recursion
+            closing = true;
           if (transport?.sessionId) delete transports[transport.sessionId];
           try {
+            // Detach handler before calling server.close() because server.close()
+            // will attempt transport.close(), which would re-trigger onclose.
+            (transport as any).onclose = undefined;
             server.close();
           } catch {
             /* noop */
