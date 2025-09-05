@@ -43,20 +43,19 @@ try {
   console.error("[MCP] Failed to set TRANSFORMERS cache directory:", e);
 }
 
-const ROOT = process.env.KOTLIN_ROOT?.trim() || "C:/path/to/your/kotlin/repo";
+const ROOT = process.env.REPO_ROOT?.trim() || "C:/path/to/your/repository";
 const ALLOWED_EXT = (process.env.ALLOWED_EXT?.split(",")
   .map(s => s.trim())
   .filter(Boolean) ?? [
-    "kt",
-    "kts",
-    "md",
-    "gradle",
-    "json",
-    "yaml",
-    "yml",
-    "xml",
-    "proto",
-    "properties"
+    // Common code/text extensions (customize via ALLOWED_EXT)
+    "ts", "tsx", "js", "jsx",
+    "py", "cs", "java", "kt", "kts",
+    "go", "rs", "cpp", "c", "h", "hpp",
+    "rb", "php", "swift", "scala",
+    "md", "txt",
+    "gradle", "groovy",
+    "json", "yaml", "yml", "xml",
+    "proto", "properties"
   ]);
 
 // Split text into overlapping chunks
@@ -140,7 +139,7 @@ function ensureWithinRoot(relPath: string) {
 }
 
 const server = new Server(
-  { name: "kotlin-rag-mcp", version: "0.2.0-emb" },
+  { name: "mcp-rag-server", version: "0.2.0-emb" },
   { capabilities: { tools: {} } }
 );
 
@@ -148,8 +147,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
       {
-        name: "rag_query_kotlin",
-        description: "Semantically search the Kotlin project and return relevant snippets (path, snippet, score).",
+        name: "rag_query",
+        description: "Semantically search files under REPO_ROOT and return relevant snippets (path, snippet, score).",
         inputSchema: {
           type: "object",
           properties: {
@@ -177,7 +176,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 });
 
 server.setRequestHandler(CallToolRequestSchema, async (req) => {
-  if (req.params.name === "rag_query_kotlin") {
+  if (req.params.name === "rag_query") {
     const { query, top_k = 5 } = (req.params.arguments ?? {}) as any;
     if (!query) throw new McpError(ErrorCode.InvalidRequest, "Missing query");
 

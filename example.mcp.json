@@ -1,13 +1,13 @@
 {
   "servers": {
-    "kotlin-rag": {
+    "mcp-rag-server": {
       "type": "stdio",
       "command": "node",
       "args": [
-        "C:/path/to/mcp-kotlin-rag/build/index.js"
+        "C:/path/to/mcp-rag-server/build/index.js"
       ],
       "env": {
-        "KOTLIN_ROOT": "C:/path/to/your/kotlin/repo",
+        "REPO_ROOT": "C:/path/to/your/repository",
         "TRANSFORMERS_CACHE": "C:/path/to/cache"
       }
     }

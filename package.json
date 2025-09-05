@@ -1,5 +1,5 @@
 {
-  "name": "mcp-kotlin-rag",
+  "name": "mcp-rag-server",
   "version": "0.2.0",
   "private": true,
   "type": "module",
