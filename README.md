@@ -137,7 +137,11 @@ Supported variables:
 - `TRANSFORMERS_CACHE` (optional): cache folder for model files.
 - `ALLOWED_EXT` (optional): comma-separated list of file extensions to index.
 - `ENABLE_HTTP_MCP_TRANSPORT` (optional): set to true/1/yes/on to run via Streamable HTTP.
-- `MODEL_NAME` (optional): override the default embedding model (`Xenova/bge-base-en-v1.5`). Example: `MODEL_NAME=Xenova/bge-small-en-v1.5` or any compatible sentence embedding model available to `@xenova/transformers`.
+- `MODEL_NAME` (optional): override the default embedding model (`jinaai/jina-embeddings-v2-base-code`). Examples:
+	- `MODEL_NAME=jinaai/jina-embeddings-v2-base-code` (default) — Balanced multilingual/code embedding model; strong for mixed natural language + source code semantic search.
+	- `MODEL_NAME=Xenova/bge-base-en-v1.5` — High-quality English general-purpose text embeddings (good for documentation/wiki style corpora).
+	- `MODEL_NAME=Xenova/bge-small-en-v1.5` — Faster/lighter English model when latency or memory matters more than a few points of recall.
+	Any compatible sentence / feature-extraction model supported by `@xenova/transformers` should work.
 - `HOST` (optional, HTTP mode): bind host (default `127.0.0.1`).
 - `MCP_PORT` (optional, HTTP mode): TCP port (default `3000`).
 - `ENABLE_DNS_REBINDING_PROTECTION` (optional, HTTP mode): defaults to `true`; set to `false` to disable host allow‑list checks.
@@ -177,3 +181,13 @@ Sample prompt:
 - First run will download and cache the model (tens to ~100 MB) and build embeddings — this may take minutes depending on repo size.
 - Logs are written to stderr (console.error) to keep MCP stdout clean.
 - For very large repos, consider adding an ANN index (`hnswlib-node`) or a hybrid BM25+embeddings setup.
+
+### Model selection guidance
+
+Choose an embedding model based on your repository characteristics:
+
+- `jinaai/jina-embeddings-v2-base-code` (default): Use when your corpus contains a meaningful amount of source code (multi-language) mixed with README / design docs. Provides strong cross-domain alignment for code-symbol + natural language queries.
+- `Xenova/bge-base-en-v1.5`: Use when the content is predominantly English natural language (docs, knowledge base) and you want slightly stronger pure text semantic quality.
+- `Xenova/bge-small-en-v1.5`: Use for faster startup / lower memory on constrained machines or when indexing very large repos where throughput matters.
+
+Feel free to experiment—swap via `MODEL_NAME` and rebuild the embedding cache (delete any existing cached vectors if you persist them externally).

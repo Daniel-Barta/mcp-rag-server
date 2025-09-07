@@ -13,7 +13,7 @@ export class Embeddings {
   constructor(modelName?: string) {
     // Precedence: explicit constructor arg > MODEL_NAME env > default
     this.modelName =
-      modelName?.trim() || process.env.MODEL_NAME?.trim() || "Xenova/bge-base-en-v1.5";
+      modelName?.trim() || process.env.MODEL_NAME?.trim() || "jinaai/jina-embeddings-v2-base-code";
   }
 
   /**
