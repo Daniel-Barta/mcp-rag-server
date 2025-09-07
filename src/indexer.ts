@@ -14,25 +14,7 @@ export type Doc = {
   emb?: Float32Array; // embedding vector once generated
 };
 
-// Internal in-memory document store
-const docs: Doc[] = [];
-
-/** Accessor for current documents */
-export function getDocs(): Doc[] {
-  return docs;
-}
-
-/** Split text into overlapping chunks */
-export function splitChunks(text: string, size = 800, overlap = 120): string[] {
-  const out: string[] = [];
-  let i = 0;
-  while (i < text.length) {
-    out.push(text.slice(i, i + size));
-    i += Math.max(1, size - overlap);
-  }
-  return out;
-}
-
+/** Options used to build an index (mirrors previous function options) */
 export interface BuildIndexOptions {
   root: string; // repository root directory
   allowedExt: string[]; // list of file extensions WITHOUT leading dot
@@ -40,63 +22,106 @@ export interface BuildIndexOptions {
   verbose?: boolean; // extra logging
 }
 
-/**
- * Build in-memory vector index: enumerate files, chunk content, embed chunks.
- * Side effects: updates status module counters, fills internal docs array.
- */
-export async function buildIndex(options: BuildIndexOptions): Promise<void> {
-  const { root, allowedExt, embeddings, verbose = false } = options;
-  docs.length = 0; // reset
+/** Class-based encapsulation of indexing + embeddings lifecycle */
+export class Indexer {
+  private root: string;
+  private allowedExt: string[];
+  private embeddings: Embeddings;
+  private verbose: boolean;
+  private docs: Doc[] = [];
+  private built = false;
 
-  const patterns = allowedExt.map((ext) => `**/*.${ext}`);
-  const files = await fg(patterns, { cwd: root, dot: false, absolute: true });
-  console.error(`[MCP] Loading files from ${root} ... (${files.length} files)`);
-  if (verbose) console.error(`[MCP][verbose] Extensions: ${allowedExt.join(", ")}`);
+  constructor(opts: BuildIndexOptions) {
+    this.root = opts.root;
+    this.allowedExt = opts.allowedExt;
+    this.embeddings = opts.embeddings;
+    this.verbose = !!opts.verbose;
+  }
 
-  let idCounter = 0;
-  let fileCounter = 0;
-  for (const file of files) {
-    try {
-      const content = await fs.readFile(file, "utf8");
-      const chunks = splitChunks(content);
-      chunks.forEach((chunk, idx) => {
-        docs.push({
-          id: `${idCounter++}`,
-          path: path.relative(root, file),
-          chunk: idx,
-          text: chunk,
+  /** Access in-memory documents */
+  getDocs(): Doc[] {
+    return this.docs;
+  }
+
+  /** Whether build() has completed */
+  isReady(): boolean {
+    return this.built;
+  }
+
+  /** Split text into overlapping chunks */
+  static splitChunks(text: string, size = 800, overlap = 120): string[] {
+    const out: string[] = [];
+    let i = 0;
+    while (i < text.length) {
+      out.push(text.slice(i, i + size));
+      i += Math.max(1, size - overlap);
+    }
+    return out;
+  }
+
+  /** Perform file discovery, chunking, and embedding generation */
+  async build(): Promise<void> {
+    this.docs.length = 0; // reset
+    const patterns = this.allowedExt.map((ext) => `**/*.${ext}`);
+    const files = await fg(patterns, { cwd: this.root, dot: false, absolute: true });
+    console.error(`[MCP] Loading files from ${this.root} ... (${files.length} files)`);
+    if (this.verbose) console.error(`[MCP][verbose] Extensions: ${this.allowedExt.join(", ")}`);
+
+    let idCounter = 0;
+    let fileCounter = 0;
+    for (const file of files) {
+      try {
+        const content = await fs.readFile(file, "utf8");
+        const chunks = Indexer.splitChunks(content);
+        chunks.forEach((chunk, idx) => {
+          this.docs.push({
+            id: `${idCounter++}`,
+            path: path.relative(this.root, file),
+            chunk: idx,
+            text: chunk,
+          });
         });
-      });
-      fileCounter++;
-      if (verbose && fileCounter % 100 === 0) {
-        console.error(`[MCP][verbose] Processed ${fileCounter}/${files.length} files`);
+        fileCounter++;
+        if (this.verbose && fileCounter % 100 === 0) {
+          console.error(`[MCP][verbose] Processed ${fileCounter}/${files.length} files`);
+        }
+      } catch {
+        /* ignore unreadable files */
       }
-    } catch {
-      /* ignore unreadable files */
     }
-  }
-  console.error(
-    `[MCP] Created ${docs.length} chunks. Generating embeddings... (first run may take a while)`,
-  );
-  setIndexTotals(files.length, docs.length);
+    console.error(
+      `[MCP] Created ${this.docs.length} chunks. Generating embeddings... (first run may take a while)`,
+    );
+    setIndexTotals(files.length, this.docs.length);
 
-  for (let i = 0; i < docs.length; i++) {
-    if (i % 200 === 0) console.error(`[MCP] Embedding ${i}/${docs.length}`);
-    if (verbose && i % 50 === 0) {
-      const pct = ((i / Math.max(1, docs.length)) * 100).toFixed(1);
-      console.error(`[MCP][verbose] Embedding progress: ${i}/${docs.length} (${pct}%)`);
+    for (let i = 0; i < this.docs.length; i++) {
+      if (i % 200 === 0) console.error(`[MCP] Embedding ${i}/${this.docs.length}`);
+      if (this.verbose && i % 50 === 0) {
+        const pct = ((i / Math.max(1, this.docs.length)) * 100).toFixed(1);
+        console.error(`[MCP][verbose] Embedding progress: ${i}/${this.docs.length} (${pct}%)`);
+      }
+      this.docs[i].emb = await this.embeddings.embed(this.docs[i].text);
+      incEmbedded();
     }
-    docs[i].emb = await embeddings.embed(docs[i].text);
-    incEmbedded();
+    console.error(`[MCP] Embeddings ready.`);
+    markReady();
+    this.built = true;
   }
-  console.error(`[MCP] Embeddings ready.`);
-  markReady();
-}
 
-/** Ensure a relative path stays within the provided root */
-export function ensureWithinRoot(root: string, relPath: string): string {
-  const abs = path.resolve(root, relPath);
-  const normRoot = path.resolve(root) + path.sep;
-  if (!abs.startsWith(normRoot)) throw new McpError(ErrorCode.InvalidRequest, "Path outside ROOT");
-  return abs;
+  /** Ensure a relative path stays within the indexer's root */
+  ensureWithinRoot(relPath: string): string {
+    return Indexer.ensureWithinRoot(this.root, relPath);
+  }
+
+  /** Static helper retaining previous external signature */
+  static ensureWithinRoot(root: string, relPath: string): string {
+    const abs = path.resolve(root, relPath);
+    const normRoot = path.resolve(root) + path.sep;
+    if (!abs.startsWith(normRoot))
+      throw new McpError(ErrorCode.InvalidRequest, "Path outside ROOT");
+    return abs;
+  }
 }
+// Backwards-compatible named exports for previous function-based API (optional)
+// These allow existing imports to transition gradually. They can be removed later.
+export const splitChunks = Indexer.splitChunks;
