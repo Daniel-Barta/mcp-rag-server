@@ -16,6 +16,11 @@ export class Embeddings {
       modelName?.trim() || process.env.MODEL_NAME?.trim() || "jinaai/jina-embeddings-v2-base-code";
   }
 
+  /** Expose current model name */
+  getModelName(): string {
+    return this.modelName;
+  }
+
   /**
    * Configure @xenova/transformers cache directory for Node.js.
    * Should be called before first init() to ensure on-disk cache usage.

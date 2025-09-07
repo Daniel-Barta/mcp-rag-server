@@ -14,6 +14,14 @@ import fg from "fast-glob";
 import { Embeddings } from "./embeddings";
 import { startHttpTransport } from "./transport/http";
 import { startStdioTransport } from "./transport/stdio";
+import {
+  markTransport,
+  setRepoRoot,
+  setModelName,
+  setIndexTotals,
+  incEmbedded,
+  markReady,
+} from "./status";
 
 type Doc = {
   id: string;
@@ -46,6 +54,7 @@ await Embeddings.configureCache().catch((e) =>
 );
 
 const ROOT = process.env.REPO_ROOT?.trim() || "C:/path/to/your/repository";
+setRepoRoot(ROOT);
 const ALLOWED_EXT = process.env.ALLOWED_EXT?.split(",")
   .map((s) => s.trim())
   .filter(Boolean) ?? [
@@ -97,14 +106,22 @@ function splitChunks(text: string, size = 800, overlap = 120) {
 let docs: Doc[] = [];
 const embeddings = new Embeddings();
 await embeddings.init();
+setModelName(embeddings.getModelName());
 // Build the in-memory index (chunks + embeddings)
+const VERBOSE = (() => {
+  const v = (process.env.VERBOSE ?? "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+})();
+
 async function buildIndex() {
   docs = [];
   const patterns = ALLOWED_EXT.map((ext) => `**/*.${ext}`);
   const files = await fg(patterns, { cwd: ROOT, dot: false, absolute: true });
   console.error(`[MCP] Loading files from ${ROOT} ... (${files.length} files)`);
+  if (VERBOSE) console.error(`[MCP][verbose] Extensions: ${ALLOWED_EXT.join(", ")}`);
 
   let idCounter = 0;
+  let fileCounter = 0;
   for (const file of files) {
     try {
       const content = await fs.readFile(file, "utf8");
@@ -117,6 +134,10 @@ async function buildIndex() {
           text: chunk,
         });
       });
+      fileCounter++;
+      if (VERBOSE && fileCounter % 100 === 0) {
+        console.error(`[MCP][verbose] Processed ${fileCounter}/${files.length} files`);
+      }
     } catch {
       /* noop: ignore unreadable files */
     }
@@ -124,12 +145,19 @@ async function buildIndex() {
   console.error(
     `[MCP] Created ${docs.length} chunks. Generating embeddings... (first run may take a while)`,
   );
+  setIndexTotals(files.length, docs.length);
 
   for (let i = 0; i < docs.length; i++) {
     if (i % 200 === 0) console.error(`[MCP] Embedding ${i}/${docs.length}`);
+    if (VERBOSE && i % 50 === 0) {
+      const pct = ((i / Math.max(1, docs.length)) * 100).toFixed(1);
+      console.error(`[MCP][verbose] Embedding progress: ${i}/${docs.length} (${pct}%)`);
+    }
     docs[i].emb = await embeddings.embed(docs[i].text);
+    incEmbedded();
   }
   console.error(`[MCP] Embeddings ready.`);
+  markReady();
 }
 
 function ensureWithinRoot(relPath: string) {
