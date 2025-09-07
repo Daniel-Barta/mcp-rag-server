@@ -8,6 +8,7 @@ import {
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
 import dotenv from "dotenv";
+import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,15 +25,22 @@ type Doc = {
   emb?: Float32Array;
 };
 
-// Load environment variables from .env (support both CWD and project root when running from build/)
-dotenv.config();
-try {
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = path.dirname(__filename);
-  dotenv.config({ path: path.resolve(__dirname, "../.env") });
-} catch {
-  // noop: optional local .env near build may not exist
-}
+// Centralized single dotenv.config() call.
+// If executing compiled code inside build/, resolve ../.env (project root). Otherwise use default.
+(() => {
+  try {
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+    const rootEnv = path.resolve(__dirname, "../.env");
+    if (fsSync.existsSync(rootEnv)) {
+      dotenv.config({ path: rootEnv });
+      return;
+    }
+  } catch {
+    /* ignore and fall back */
+  }
+  dotenv.config();
+})();
 
 // Configure transformers cache directory ASAP, before any model/pipeline is created
 await Embeddings.configureCache().catch((e) =>
