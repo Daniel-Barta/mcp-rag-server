@@ -244,15 +244,14 @@ function createServer() {
 
 await buildIndex();
 
-// Choose transport: stdio (default) or Streamable HTTP
-// Controlled via .env: ENABLE_HTTP_MCP_TRANSPORT=true|1 to enable HTTP transport
-const wantsHttp = (() => {
-  const v = (process.env.ENABLE_HTTP_MCP_TRANSPORT ?? "").trim().toLowerCase();
-  return v === "true" || v === "1" || v === "yes" || v === "on";
-})();
+// Choose transport: stdio (default) or Streamable HTTP via MCP_TRANSPORT=http|stdio
+const transportEnv = (process.env.MCP_TRANSPORT ?? "").trim().toLowerCase();
+const useHttp = transportEnv === "http" || transportEnv === "streamable-http";
 
-if (!wantsHttp) {
-  await startStdioTransport(createServer);
-} else {
+if (useHttp) {
+  markTransport("http");
   await startHttpTransport(createServer);
+} else {
+  markTransport("stdio");
+  await startStdioTransport(createServer);
 }

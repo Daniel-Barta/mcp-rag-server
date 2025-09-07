@@ -15,31 +15,55 @@ npm run build
 
 ## Run (local test)
 
-# Windows PowerShell
+Build then start (stdio transport by default). Use either `npm start` or invoke the built file directly.
 
-$env:REPO_ROOT="C:\path\to\your-repo"; node build/index.js
-
-# macOS/Linux (bash/zsh)
-
-export REPO_ROOT="/path/to/your-repo"; node build/index.js
-
-Optionally set a model cache to speed up subsequent runs:
-export TRANSFORMERS_CACHE="/path/to/cache"
-
-### Streamable HTTP mode
-
-Run the MCP server as an HTTP endpoint (Streamable HTTP transport):
+### Windows PowerShell
 
 ```
 npm run build
-$env:REPO_ROOT="C:\path\to\your-repo"; $env:ENABLE_HTTP_MCP_TRANSPORT="true"; npm run start
+$env:REPO_ROOT="C:\path\to\your-repo"; node dist/index.js
+```
+
+Or:
+
+```
+$env:REPO_ROOT="C:\path\to\your-repo"; npm start
+```
+
+### macOS / Linux (bash/zsh)
+
+```
+npm run build
+export REPO_ROOT="/path/to/your-repo"; node dist/index.js
+```
+
+Or:
+
+```
+export REPO_ROOT="/path/to/your-repo"; npm start
+```
+
+Optionally set a model cache to speed up subsequent runs (first start downloads the model once):
+
+```
+export TRANSFORMERS_CACHE="/path/to/cache"   # macOS/Linux
+$env:TRANSFORMERS_CACHE="C:\path\to\cache" # Windows PowerShell
+```
+
+### Streamable HTTP mode (recommended for large initial indexes)
+
+Run the MCP server as an HTTP endpoint and only open your IDE after `Embeddings ready.` shows (avoids client timeouts on cold start):
+
+```
+npm run build
+$env:REPO_ROOT="C:\path\to\your-repo"; $env:MCP_TRANSPORT="http"; npm start
 ```
 
 ```
-export REPO_ROOT="/path/to/your-repo"; ENABLE_HTTP_MCP_TRANSPORT=true npm run start
+export REPO_ROOT="/path/to/your-repo"; MCP_TRANSPORT=http npm start
 ```
 
-Default HTTP bind: http://127.0.0.1:3000/mcp. Override with `HOST` and `MCP_PORT` envs.
+Default HTTP bind: http://127.0.0.1:3000/mcp. Override with `HOST` and `MCP_PORT` envs. A readiness endpoint is available at `http://127.0.0.1:3000/health` returning JSON `{ ready, indexing:{...}, modelName, transport }`.
 
 ### Linting & Formatting
 
@@ -56,27 +80,27 @@ Windows PowerShell:
 
 ```
 npm run build
-$env:REPO_ROOT="C:\path\to\your-repo"; npx @modelcontextprotocol/inspector node .\\build\\index.js
+$env:REPO_ROOT="C:\path\to\your-repo"; npx @modelcontextprotocol/inspector node .\\dist\\index.js
 ```
 
 Streamable HTTP via Inspector (Windows):
 
 ```
 npm run build
-$env:REPO_ROOT="C:\path\to\your-repo"; $env:ENABLE_HTTP_MCP_TRANSPORT="true"; npx @modelcontextprotocol/inspector http://localhost:3000/mcp --transport http
+$env:REPO_ROOT="C:\path\to\your-repo"; $env:MCP_TRANSPORT="http"; npx @modelcontextprotocol/inspector http://localhost:3000/mcp --transport http
 ```
 
 macOS/Linux (bash/zsh):
 
 ```
 export REPO_ROOT="/path/to/your-repo"
-npx @modelcontextprotocol/inspector node build/index.js
+npx @modelcontextprotocol/inspector node dist/index.js
 ```
 
 Streamable HTTP (macOS/Linux):
 
 ```
-export REPO_ROOT="/path/to/your-repo"; ENABLE_HTTP_MCP_TRANSPORT=true npx @modelcontextprotocol/inspector http://localhost:3000/mcp --transport http
+export REPO_ROOT="/path/to/your-repo"; MCP_TRANSPORT=http npx @modelcontextprotocol/inspector http://localhost:3000/mcp --transport http
 ```
 
 Notes:
@@ -136,7 +160,8 @@ Supported variables:
 - `REPO_ROOT` (required): path to the repository to index.
 - `TRANSFORMERS_CACHE` (optional): cache folder for model files.
 - `ALLOWED_EXT` (optional): comma-separated list of file extensions to index.
-- `ENABLE_HTTP_MCP_TRANSPORT` (optional): set to true/1/yes/on to run via Streamable HTTP.
+- `MCP_TRANSPORT` (optional): `http` or `stdio`.
+- `VERBOSE` (optional): true/1/yes/on for more granular progress logs during indexing & embedding.
 - `MODEL_NAME` (optional): override the default embedding model (`jinaai/jina-embeddings-v2-base-code`). Examples:
   - `MODEL_NAME=jinaai/jina-embeddings-v2-base-code` (default) — Balanced multilingual/code embedding model; strong for mixed natural language + source code semantic search.
   - `MODEL_NAME=Xenova/bge-base-en-v1.5` — High-quality English general-purpose text embeddings (good for documentation/wiki style corpora).

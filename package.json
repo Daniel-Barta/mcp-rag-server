@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "start": "node dist/index.js",
     "inspector": "npx @modelcontextprotocol/inspector node dist/index.js",
-    "inspector:http": "powershell -NoProfile -Command \"$env:ENABLE_HTTP_MCP_TRANSPORT=1; npx @modelcontextprotocol/inspector http://localhost:3000/mcp --transport http\"",
+    "inspector:http": "powershell -NoProfile -Command \"$env:MCP_TRANSPORT=http; npx @modelcontextprotocol/inspector http://localhost:3000/mcp --transport http\"",
     "clean": "rimraf dist",
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
