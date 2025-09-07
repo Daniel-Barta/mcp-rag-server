@@ -28,6 +28,8 @@ export interface BuildIndexOptions {
   allowedExt: string[]; // list of file extensions WITHOUT leading dot
   embeddings: Embeddings; // initialized embeddings instance
   verbose?: boolean; // extra logging
+  chunkSize?: number; // optional override (default 800)
+  chunkOverlap?: number; // optional override (default 120)
 }
 
 /**
@@ -43,6 +45,8 @@ export class Indexer {
   private readonly embeddings: Embeddings;
   private readonly verbose: boolean;
   private readonly docs: Doc[] = [];
+  private readonly chunkSize: number;
+  private readonly chunkOverlap: number;
   private built = false;
 
   public constructor(opts: BuildIndexOptions) {
@@ -50,6 +54,16 @@ export class Indexer {
     this.allowedExt = opts.allowedExt;
     this.embeddings = opts.embeddings;
     this.verbose = !!opts.verbose;
+    this.chunkSize = opts.chunkSize ?? 800;
+    this.chunkOverlap = opts.chunkOverlap ?? 120;
+    // Safety: ensure overlap < size for forward progress
+    if (this.chunkOverlap >= this.chunkSize) {
+      const fallback = Math.max(0, Math.floor(this.chunkSize * 0.15));
+      console.error(
+        `[MCP] Provided chunkOverlap (=${this.chunkOverlap}) >= chunkSize (=${this.chunkSize}). Using fallback overlap ${fallback}.`,
+      );
+      this.chunkOverlap = fallback;
+    }
   }
 
   /**
@@ -107,7 +121,7 @@ export class Indexer {
     for (const file of files) {
       try {
         const content = await fs.readFile(file, "utf8");
-        const chunks = Indexer.splitChunks(content);
+        const chunks = Indexer.splitChunks(content, this.chunkSize, this.chunkOverlap);
         chunks.forEach((chunk, idx) => {
           this.docs.push({
             id: `${idCounter++}`,

@@ -85,6 +85,20 @@ const VERBOSE = (() => {
   return v === "1" || v === "true" || v === "yes" || v === "on";
 })();
 
+// Chunk sizing (optional env overrides; defaults 800 / 120)
+const CHUNK_SIZE = (() => {
+  const raw = process.env.CHUNK_SIZE?.trim();
+  if (!raw) return 800;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.min(8000, Math.floor(n)) : 800; // clamp to sane upper bound
+})();
+const CHUNK_OVERLAP = (() => {
+  const raw = process.env.CHUNK_OVERLAP?.trim();
+  if (!raw) return 120;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.min(4000, Math.floor(n)) : 120;
+})();
+
 // Initialize embedding model (model name resolved internally). Errors surface
 // early rather than lazily inside the first tool invocation.
 const embeddings = new Embeddings();
@@ -96,6 +110,8 @@ const indexer = new Indexer({
   allowedExt: ALLOWED_EXT,
   embeddings,
   verbose: VERBOSE,
+  chunkSize: CHUNK_SIZE,
+  chunkOverlap: CHUNK_OVERLAP,
 });
 
 /**
