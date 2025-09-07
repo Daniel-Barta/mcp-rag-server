@@ -2,7 +2,7 @@
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 
-/** @type {import("eslint").Linter.FlatConfig[]} */
+/** @type {import("eslint").FlatConfig[]} */
 export default [
   { ignores: ["dist/**", "node_modules/**"] },
   js.configs.recommended,
