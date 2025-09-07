@@ -1,4 +1,5 @@
-import { StdioServerTransport, Server } from "../mcp-sdk";
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 /**
  * Start the MCP stdio transport.

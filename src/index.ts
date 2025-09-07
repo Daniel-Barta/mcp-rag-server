@@ -1,10 +1,10 @@
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
-  Server,
   ListToolsRequestSchema,
   CallToolRequestSchema,
   ErrorCode,
   McpError,
-} from "./mcp-sdk";
+} from "@modelcontextprotocol/sdk/types.js";
 import dotenv from "dotenv";
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
@@ -178,7 +178,7 @@ function createServer() {
     };
   });
 
-  server.setRequestHandler(CallToolRequestSchema, async (req) => {
+  server.setRequestHandler(CallToolRequestSchema, async (req: any) => {
     if (req.params.name === "rag_query") {
       const { query, top_k = 5 } = (req.params.arguments ?? {}) as any;
       if (!query) throw new McpError(ErrorCode.InvalidRequest, "Missing query");
