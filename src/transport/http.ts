@@ -6,8 +6,13 @@ import { statusManager } from "../status";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 
 /**
- * Start the MCP HTTP transport using StreamableHTTPServerTransport.
- * Expects a factory that creates a fresh MCP Server instance per session.
+ * Start the streamable HTTP transport. Each distinct session (identified by
+ * the generated session ID header) owns its own MCP Server + transport pair.
+ *
+ * Security: defaults restrict allowed hosts and enable DNS rebinding
+ * protection unless explicitly disabled via environment variables.
+ *
+ * @param createServer Factory producing a fresh MCP Server instance per new session.
  */
 export async function startHttpTransport(createServer: () => Server) {
   const app = express();

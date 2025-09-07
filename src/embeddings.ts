@@ -3,29 +3,34 @@ import path from "node:path";
 import { env, pipeline } from "@xenova/transformers";
 
 /**
- * Embeddings class encapsulates model initialization, cache configuration,
- * embedding generation and cosine similarity helpers.
+ * Encapsulates embedding model initialization, cache directory configuration
+ * and helper utilities for generating embeddings + computing cosine similarity.
+ * A single instance can be reused for any number of embed() calls.
  */
 export class Embeddings {
   private modelName: string;
   private embedder: any | null = null;
 
-  constructor(modelName?: string) {
-    // Precedence: explicit constructor arg > MODEL_NAME env > default
+  public constructor(modelName?: string) {
+    // Resolution precedence: explicit ctor arg > MODEL_NAME env var > default model
     this.modelName =
       modelName?.trim() || process.env.MODEL_NAME?.trim() || "jinaai/jina-embeddings-v2-base-code";
   }
 
-  /** Expose current model name */
-  getModelName(): string {
+  /** @returns Resolved (possibly defaulted) underlying model identifier. */
+  public getModelName(): string {
     return this.modelName;
   }
 
   /**
-   * Configure @xenova/transformers cache directory for Node.js.
-   * Should be called before first init() to ensure on-disk cache usage.
+   * Configure the @xenova/transformers cache directory for Node.js execution.
+   * Should be invoked before {@link init} so model weights are persisted.
+   *
+   * @param cacheDir Optional explicit directory. Falls back to TRANSFORMERS_CACHE,
+   *                 then a project-local .cache/transformers folder.
+   * @returns Resolved cache directory path actually used.
    */
-  static async configureCache(cacheDir?: string): Promise<string> {
+  public static async configureCache(cacheDir?: string): Promise<string> {
     const dir =
       cacheDir?.trim() ||
       process.env.TRANSFORMERS_CACHE?.trim() ||
@@ -45,10 +50,8 @@ export class Embeddings {
     return dir;
   }
 
-  /**
-   * Lazily initialize the underlying embedding pipeline.
-   */
-  async init(): Promise<void> {
+  /** Lazily initialize the underlying embedding pipeline (idempotent). */
+  public async init(): Promise<void> {
     if (this.embedder) return; // already initialized
     console.error(`[MCP] Loading embedding model: ${this.modelName}`);
     this.embedder = await pipeline("feature-extraction", this.modelName);
@@ -56,19 +59,29 @@ export class Embeddings {
   }
 
   /**
-   * Compute an embedding for the given text (mean pooling + normalization).
-   * Ensures the model is initialized.
+   * Compute an embedding for a single text string using mean pooling and
+   * L2 normalization (as provided by the pipeline options).
+   *
+   * @param text Input text (no length hard limit enforced here but extremely
+   *             large inputs may be truncated by the model tokenizer).
+   * @returns Normalized embedding vector.
+   * @throws Error if {@link init} has not been called.
    */
-  async embed(text: string): Promise<Float32Array> {
+  public async embed(text: string): Promise<Float32Array> {
     if (!this.embedder) throw new Error("Embedder not initialized. Call init() first.");
     const output = await this.embedder(text, { pooling: "mean", normalize: true });
     return output.data as Float32Array;
   }
 
   /**
-   * Cosine similarity between two vectors.
+   * Compute cosine similarity between two Float32 vectors. Length mismatch is
+   * handled by comparing up to the shortest length.
+   *
+   * @param a First embedding vector
+   * @param b Second embedding vector
+   * @returns Cosine similarity in range [-1, 1]
    */
-  static cosine(a: Float32Array, b: Float32Array): number {
+  public static cosine(a: Float32Array, b: Float32Array): number {
     let dot = 0,
       na = 0,
       nb = 0;

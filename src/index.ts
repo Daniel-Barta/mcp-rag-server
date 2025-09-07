@@ -1,3 +1,8 @@
+/**
+ * Application entry point: initializes environment/config, builds an in-memory
+ * semantic index over the target repository, then starts either STDIO or
+ * streamable HTTP MCP transport exposing RAG + read_file tools.
+ */
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
   ListToolsRequestSchema,
@@ -80,6 +85,8 @@ const VERBOSE = (() => {
   return v === "1" || v === "true" || v === "yes" || v === "on";
 })();
 
+// Initialize embedding model (model name resolved internally). Errors surface
+// early rather than lazily inside the first tool invocation.
 const embeddings = new Embeddings();
 await embeddings.init();
 statusManager.setModelName(embeddings.getModelName());
@@ -91,12 +98,17 @@ const indexer = new Indexer({
   verbose: VERBOSE,
 });
 
+/**
+ * Factory to construct a new MCP Server instance with tool handlers. A fresh
+ * server is created per transport session (esp. for HTTP streamable sessions).
+ */
 function createServer() {
   const server = new Server(
     { name: "mcp-rag-server", version: "0.3.0" },
     { capabilities: { tools: {} } },
   );
 
+  // Tool discovery: list available tool names + schemas.
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
       tools: [
@@ -130,6 +142,7 @@ function createServer() {
     };
   });
 
+  // Tool execution router (RAG similarity search + basic file read helper).
   server.setRequestHandler(CallToolRequestSchema, async (req: any) => {
     if (req.params.name === "rag_query") {
       const { query, top_k = 5 } = (req.params.arguments ?? {}) as any;
@@ -166,9 +179,11 @@ function createServer() {
   return server;
 }
 
+// Build the semantic index (blocking startup until ready). The status manager
+// tracks progress which can be polled (HTTP mode) via /health.
 await indexer.build();
 
-// Choose transport: stdio (default) or Streamable HTTP via MCP_TRANSPORT=http|stdio
+// Choose transport: stdio (default) or streamable HTTP via MCP_TRANSPORT=http|stdio
 const transportEnv = (process.env.MCP_TRANSPORT ?? "").trim().toLowerCase();
 const useHttp = transportEnv === "http" || transportEnv === "streamable-http";
 

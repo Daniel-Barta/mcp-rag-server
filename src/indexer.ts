@@ -5,7 +5,12 @@ import { Embeddings } from "./embeddings";
 import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { statusManager } from "./status";
 
-/** Represents a single chunk of source content with optional embedding */
+/**
+ * Represents a single chunk of source content (post splitting) with an optional
+ * embedding vector. Chunks are addressed by monotonically increasing string
+ * IDs (unique only within the current process lifecycle) plus their file path
+ * and in-file chunk index. The raw text is retained in-memory for fast scoring.
+ */
 export type Doc = {
   id: string;
   path: string; // file path relative to repo root
@@ -14,7 +19,10 @@ export type Doc = {
   emb?: Float32Array; // embedding vector once generated
 };
 
-/** Options used to build an index (mirrors previous function options) */
+/**
+ * Options required to construct an {@link Indexer}. All fields are mandatory
+ * except `verbose` which enables periodic progress logging.
+ */
 export interface BuildIndexOptions {
   root: string; // repository root directory
   allowedExt: string[]; // list of file extensions WITHOUT leading dot
@@ -22,34 +30,53 @@ export interface BuildIndexOptions {
   verbose?: boolean; // extra logging
 }
 
-/** Class-based encapsulation of indexing + embeddings lifecycle */
+/**
+ * High-level orchestrator for: file discovery, content chunking, and embedding
+ * generation. The full corpus (chunks + embeddings) is kept in-memory for
+ * simplicity / speed; for large repositories consider persisting to disk or a
+ * vector store. A single "build" pass is currently supported (no incremental
+ * update logic yet).
+ */
 export class Indexer {
-  private root: string;
-  private allowedExt: string[];
-  private embeddings: Embeddings;
-  private verbose: boolean;
-  private docs: Doc[] = [];
+  private readonly root: string;
+  private readonly allowedExt: string[];
+  private readonly embeddings: Embeddings;
+  private readonly verbose: boolean;
+  private readonly docs: Doc[] = [];
   private built = false;
 
-  constructor(opts: BuildIndexOptions) {
+  public constructor(opts: BuildIndexOptions) {
     this.root = opts.root;
     this.allowedExt = opts.allowedExt;
     this.embeddings = opts.embeddings;
     this.verbose = !!opts.verbose;
   }
 
-  /** Access in-memory documents */
-  getDocs(): Doc[] {
+  /**
+   * Access all in-memory documents (mutable array reference). Treat as
+   * read-only in callers to avoid corrupting internal state.
+   */
+  public getDocs(): Doc[] {
     return this.docs;
   }
 
-  /** Whether build() has completed */
-  isReady(): boolean {
+  /** Whether {@link build} has completed successfully. */
+  public isReady(): boolean {
     return this.built;
   }
 
-  /** Split text into overlapping chunks */
-  static splitChunks(text: string, size = 800, overlap = 120): string[] {
+  /**
+   * Split arbitrary text into (roughly) fixed-size overlapping chunks. The
+   * final chunk may be shorter. Overlap helps retain context continuity across
+   * chunk boundaries for embedding similarity.
+   *
+   * @param text Full input string to divide.
+   * @param size Target maximum characters per chunk (default 800).
+   * @param overlap Number of characters of trailing overlap to retain from the
+   * previous chunk (default 120). Must be < size for forward progress.
+   * @returns Ordered list of chunk strings.
+   */
+  public static splitChunks(text: string, size = 800, overlap = 120): string[] {
     const out: string[] = [];
     let i = 0;
     while (i < text.length) {
@@ -59,8 +86,16 @@ export class Indexer {
     return out;
   }
 
-  /** Perform file discovery, chunking, and embedding generation */
-  async build(): Promise<void> {
+  /**
+   * Perform a full corpus (re)build: discover files, load contents, chunk, and
+   * generate embeddings sequentially. Existing state is cleared first. Errors
+   * reading individual files are intentionally swallowed to maximize coverage.
+   *
+   * Note: This is a blocking, single-threaded process; large repositories will
+   * take time. Consider future enhancements (parallelism, incremental update,
+   * persistence) if performance becomes a concern.
+   */
+  public async build(): Promise<void> {
     this.docs.length = 0; // reset
     const patterns = this.allowedExt.map((ext) => `**/*.${ext}`);
     const files = await fg(patterns, { cwd: this.root, dot: false, absolute: true });
@@ -108,13 +143,17 @@ export class Indexer {
     this.built = true;
   }
 
-  /** Ensure a relative path stays within the indexer's root */
-  ensureWithinRoot(relPath: string): string {
+  /** Ensure a (possibly user-supplied) relative path stays within the indexer's root. */
+  public ensureWithinRoot(relPath: string): string {
     return Indexer.ensureWithinRoot(this.root, relPath);
   }
 
-  /** Static helper retaining previous external signature */
-  static ensureWithinRoot(root: string, relPath: string): string {
+  /**
+   * Static helper variant of {@link ensureWithinRoot}. Throws an MCP
+   * InvalidRequest error if the resolved absolute path attempts directory
+   * traversal outside the configured repository root.
+   */
+  public static ensureWithinRoot(root: string, relPath: string): string {
     const abs = path.resolve(root, relPath);
     const normRoot = path.resolve(root) + path.sep;
     if (!abs.startsWith(normRoot))
@@ -122,6 +161,3 @@ export class Indexer {
     return abs;
   }
 }
-// Backwards-compatible named exports for previous function-based API (optional)
-// These allow existing imports to transition gradually. They can be removed later.
-export const splitChunks = Indexer.splitChunks;

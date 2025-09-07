@@ -3,7 +3,9 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 
 /**
  * Start the MCP stdio transport.
- * Expects a factory that creates a fresh MCP Server instance.
+ *
+ * @param createServer Factory returning a new, unconnected MCP Server instance.
+ * @returns Promise resolving once the server is connected over stdio.
  */
 export async function startStdioTransport(createServer: () => Server) {
   const server = createServer();
