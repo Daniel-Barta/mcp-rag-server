@@ -1,21 +1,19 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-// Stdio transport is now in src/transport/stdio.ts
-// HTTP transport is now in src/transport/http.ts
 import {
+  Server,
   ListToolsRequestSchema,
   CallToolRequestSchema,
   ErrorCode,
   McpError,
-} from "@modelcontextprotocol/sdk/types.js";
+} from "./mcp-sdk";
 import dotenv from "dotenv";
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fg from "fast-glob";
-import { Embeddings } from "./embeddings.js";
-import { startHttpTransport } from "./transport/http.js";
-import { startStdioTransport } from "./transport/stdio.js";
+import { Embeddings } from "./embeddings";
+import { startHttpTransport } from "./transport/http";
+import { startStdioTransport } from "./transport/stdio";
 
 type Doc = {
   id: string;

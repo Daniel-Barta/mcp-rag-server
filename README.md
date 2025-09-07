@@ -138,10 +138,10 @@ Supported variables:
 - `ALLOWED_EXT` (optional): comma-separated list of file extensions to index.
 - `ENABLE_HTTP_MCP_TRANSPORT` (optional): set to true/1/yes/on to run via Streamable HTTP.
 - `MODEL_NAME` (optional): override the default embedding model (`jinaai/jina-embeddings-v2-base-code`). Examples:
-	- `MODEL_NAME=jinaai/jina-embeddings-v2-base-code` (default) — Balanced multilingual/code embedding model; strong for mixed natural language + source code semantic search.
-	- `MODEL_NAME=Xenova/bge-base-en-v1.5` — High-quality English general-purpose text embeddings (good for documentation/wiki style corpora).
-	- `MODEL_NAME=Xenova/bge-small-en-v1.5` — Faster/lighter English model when latency or memory matters more than a few points of recall.
-	Any compatible sentence / feature-extraction model supported by `@xenova/transformers` should work.
+  - `MODEL_NAME=jinaai/jina-embeddings-v2-base-code` (default) — Balanced multilingual/code embedding model; strong for mixed natural language + source code semantic search.
+  - `MODEL_NAME=Xenova/bge-base-en-v1.5` — High-quality English general-purpose text embeddings (good for documentation/wiki style corpora).
+  - `MODEL_NAME=Xenova/bge-small-en-v1.5` — Faster/lighter English model when latency or memory matters more than a few points of recall.
+    Any compatible sentence / feature-extraction model supported by `@xenova/transformers` should work.
 - `HOST` (optional, HTTP mode): bind host (default `127.0.0.1`).
 - `MCP_PORT` (optional, HTTP mode): TCP port (default `3000`).
 - `ENABLE_DNS_REBINDING_PROTECTION` (optional, HTTP mode): defaults to `true`; set to `false` to disable host allow‑list checks.

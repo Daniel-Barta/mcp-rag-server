@@ -1,8 +1,6 @@
 import express from "express";
 import { randomUUID } from "node:crypto";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
-import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StreamableHTTPServerTransport, isInitializeRequest, Server } from "../mcp-sdk";
 
 /**
  * Start the MCP HTTP transport using StreamableHTTPServerTransport.

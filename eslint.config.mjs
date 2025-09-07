@@ -4,7 +4,7 @@ import tseslint from "typescript-eslint";
 
 /** @type {import("eslint").Linter.FlatConfig[]} */
 export default [
-  { ignores: ["build/**", "node_modules/**"] },
+  { ignores: ["dist/**", "node_modules/**"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
