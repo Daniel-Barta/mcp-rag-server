@@ -1,6 +1,30 @@
-# mcp-rag-server (Node.js, local RAG for any repo)
+# mcp-rag-server (local RAG MCP server for any repository)
 
-A local MCP server for GitHub Copilot Agent mode in Visual Studio 2022. It performs semantic search over a repository (local embeddings via `@xenova/transformers`) and returns relevant snippets as context (RAG). Works for many languages or plain text files.
+`mcp-rag-server` is a lightweight, zero‑network (after model download) Retrieval‑Augmented Generation helper you can plug into **any client that speaks the [Model Context Protocol (MCP)]**. GitHub Copilot Agent mode in Visual Studio / VS Code is just one option – you can also use the official MCP Inspector, future MCP‑aware IDEs, or custom tooling.
+
+It indexes a target repository directory, chunks the content (default chunk size 800 chars with 120 char overlap), builds **local embeddings** using `@xenova/transformers`, and exposes two MCP tools:
+
+- `rag_query` – semantic search returning scored snippets (path, score, snippet)
+- `read_file` – secure file read (optional line range) constrained to `REPO_ROOT`
+
+Two transports are supported (select with `MCP_TRANSPORT=stdio|http`):
+
+- `stdio` – simplest integration for IDEs that spawn a process (backward compatible default)
+- `http` (Streamable HTTP) – recommended for large repos / first run so you can watch logs & poll readiness before attaching a client. Enable via `MCP_TRANSPORT=http`. Includes DNS rebinding protection by default.
+
+## Features
+
+- Pure local embedding inference (no external API calls) via `@xenova/transformers`
+- Multi‑language source + docs support (configurable via `ALLOWED_EXT`)
+- Fast glob file discovery and overlapping chunking for better recall
+- Simple cosine similarity ranking (optionally swap to ANN later)
+- Pluggable model selection via `MODEL_NAME` (see guidance below)
+- Stdio or Streamable HTTP transport (with optional host allow‑list)
+- Safe path handling (rejects attempts to escape `REPO_ROOT`)
+- Minimal dependencies; quick startup after first model load
+- Ready for extension: add new MCP tools, persistent caches, or ANN indexes
+
+Planned / Nice‑to‑have (not yet implemented): persistent vector cache, incremental reindexing on file change, hybrid BM25 + embedding search, optional HNSW / IVF ANN acceleration, per‑language tokenizer heuristics.
 
 ## Requirements
 
@@ -194,7 +218,7 @@ For Streamable HTTP, use a config entry like:
 }
 ```
 
-Open VS -> Copilot Chat -> switch to Agent mode -> enable the "mcp-rag-server" and its tools (you will be asked to grant permission on first use).
+Open VS -> Copilot Chat -> switch to Agent mode -> enable the "mcp-rag-server" and its tools (you will be asked to grant permission on first use). If using HTTP transport, ensure the config entry uses `"type": "streamable-http"` and the server has finished indexing (check `/health`).
 
 ## Usage in Agent mode
 
