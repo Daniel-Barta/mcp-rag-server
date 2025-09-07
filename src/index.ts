@@ -14,7 +14,7 @@ import { Embeddings } from "./embeddings";
 import { Indexer } from "./indexer";
 import { startHttpTransport } from "./transport/http";
 import { startStdioTransport } from "./transport/stdio";
-import { markTransport, setRepoRoot, setModelName } from "./status";
+import { statusManager } from "./status";
 
 // Centralized single dotenv.config() call.
 // If executing compiled code inside build/, resolve ../.env (project root). Otherwise use default.
@@ -39,7 +39,7 @@ await Embeddings.configureCache().catch((e) =>
 );
 
 const ROOT = process.env.REPO_ROOT?.trim() || "C:/path/to/your/repository";
-setRepoRoot(ROOT);
+statusManager.setRepoRoot(ROOT);
 const ALLOWED_EXT = process.env.ALLOWED_EXT?.split(",")
   .map((s) => s.trim())
   .filter(Boolean) ?? [
@@ -82,7 +82,7 @@ const VERBOSE = (() => {
 
 const embeddings = new Embeddings();
 await embeddings.init();
-setModelName(embeddings.getModelName());
+statusManager.setModelName(embeddings.getModelName());
 // Instantiate indexer (will build below)
 const indexer = new Indexer({
   root: ROOT,
@@ -173,9 +173,9 @@ const transportEnv = (process.env.MCP_TRANSPORT ?? "").trim().toLowerCase();
 const useHttp = transportEnv === "http" || transportEnv === "streamable-http";
 
 if (useHttp) {
-  markTransport("http");
+  statusManager.markTransport("http");
   await startHttpTransport(createServer);
 } else {
-  markTransport("stdio");
+  statusManager.markTransport("stdio");
   await startStdioTransport(createServer);
 }

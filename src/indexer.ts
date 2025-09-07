@@ -3,7 +3,7 @@ import path from "node:path";
 import fg from "fast-glob";
 import { Embeddings } from "./embeddings";
 import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
-import { setIndexTotals, incEmbedded, markReady } from "./status";
+import { statusManager } from "./status";
 
 /** Represents a single chunk of source content with optional embedding */
 export type Doc = {
@@ -92,7 +92,7 @@ export class Indexer {
     console.error(
       `[MCP] Created ${this.docs.length} chunks. Generating embeddings... (first run may take a while)`,
     );
-    setIndexTotals(files.length, this.docs.length);
+    statusManager.setIndexTotals(files.length, this.docs.length);
 
     for (let i = 0; i < this.docs.length; i++) {
       if (i % 200 === 0) console.error(`[MCP] Embedding ${i}/${this.docs.length}`);
@@ -101,10 +101,10 @@ export class Indexer {
         console.error(`[MCP][verbose] Embedding progress: ${i}/${this.docs.length} (${pct}%)`);
       }
       this.docs[i].emb = await this.embeddings.embed(this.docs[i].text);
-      incEmbedded();
+      statusManager.incEmbedded();
     }
     console.error(`[MCP] Embeddings ready.`);
-    markReady();
+    statusManager.markReady();
     this.built = true;
   }
 

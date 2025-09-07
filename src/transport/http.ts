@@ -2,7 +2,7 @@ import express from "express";
 import { randomUUID } from "node:crypto";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { status } from "../status";
+import { statusManager } from "../status";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 
 /**
@@ -107,7 +107,7 @@ export async function startHttpTransport(createServer: () => Server) {
 
   // Health / readiness endpoint
   app.get("/health", (_req, res) => {
-    res.json(status);
+    res.json(statusManager.getStatus());
   });
 
   await new Promise<void>((resolve) => {

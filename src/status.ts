@@ -15,37 +15,59 @@ export interface ServerStatus {
   indexing: IndexingStatus;
 }
 
-export const status: ServerStatus = {
-  version: "0.3.0",
-  repoRoot: "",
-  modelName: "",
-  transport: "unknown",
-  ready: false,
-  startedAt: new Date().toISOString(),
-  indexing: { filesDiscovered: 0, chunksTotal: 0, chunksEmbedded: 0 },
-};
+/**
+ * Class wrapper around mutable server status state.
+ * Provides methods instead of ad-hoc mutation while preserving previous function API.
+ */
+export class StatusManager {
+  /** Internal mutable status object (exposed read-only via exported alias). */
+  readonly data: ServerStatus;
 
-export function markTransport(t: string) {
-  status.transport = t;
+  constructor(initial?: Partial<ServerStatus>) {
+    this.data = {
+      version: initial?.version ?? "0.3.0",
+      repoRoot: initial?.repoRoot ?? "",
+      modelName: initial?.modelName ?? "",
+      transport: initial?.transport ?? "unknown",
+      ready: initial?.ready ?? false,
+      startedAt: initial?.startedAt ?? new Date().toISOString(),
+      indexing: initial?.indexing ?? {
+        filesDiscovered: 0,
+        chunksTotal: 0,
+        chunksEmbedded: 0,
+      },
+    };
+  }
+
+  markTransport(t: string) {
+    this.data.transport = t;
+  }
+  setRepoRoot(root: string) {
+    this.data.repoRoot = root;
+  }
+  setModelName(name: string) {
+    this.data.modelName = name;
+  }
+  setIndexTotals(files: number, chunks: number) {
+    this.data.indexing.filesDiscovered = files;
+    this.data.indexing.chunksTotal = chunks;
+  }
+  incEmbedded(count = 1) {
+    this.data.indexing.chunksEmbedded += count;
+  }
+  markReady() {
+    this.data.ready = true;
+  }
+  /** Access current status snapshot (same object). */
+  getStatus(): ServerStatus {
+    return this.data;
+  }
+  toJSON() {
+    return this.data;
+  }
 }
 
-export function setRepoRoot(root: string) {
-  status.repoRoot = root;
-}
-
-export function setModelName(name: string) {
-  status.modelName = name;
-}
-
-export function setIndexTotals(files: number, chunks: number) {
-  status.indexing.filesDiscovered = files;
-  status.indexing.chunksTotal = chunks;
-}
-
-export function incEmbedded(count = 1) {
-  status.indexing.chunksEmbedded += count;
-}
-
-export function markReady() {
-  status.ready = true;
-}
+// Singleton instance (mirrors previous module-level mutable object)
+export const statusManager = new StatusManager();
+// Export direct mutable status object if external read access is still desired.
+//export const status: ServerStatus = statusManager.data; // optional; can remove later if unused
