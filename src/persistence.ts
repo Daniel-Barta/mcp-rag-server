@@ -2,6 +2,14 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import { Doc } from "./types";
 
+/**
+ * Parameters controlling a load attempt for a previously persisted embedding/chunk index.
+ *
+ * Notes:
+ * - If `storePath` is omitted here and the instance was constructed with a path, the instance path is used.
+ * - `chunkSize`, `chunkOverlap`, and `modelName` must match the metadata found on disk; otherwise the load
+ *   is treated as incompatible and will return `null` (triggering a cold rebuild by callers).
+ */
 export interface LoadParams {
   storePath?: string;
   chunkSize: number;
@@ -10,6 +18,13 @@ export interface LoadParams {
   verbose?: boolean;
 }
 
+/**
+ * Parameters used when persisting the in-memory index to disk.
+ *
+ * The `docs` array must contain embeddings (Float32Array) which will be serialized as base64-encoded
+ * 32-bit floats (little-endian) under the `emb` property in the output JSON. Metadata is stored alongside
+ * to allow compatibility checks on subsequent loads.
+ */
 export interface SaveParams {
   storePath?: string;
   docs: Doc[];
@@ -20,32 +35,47 @@ export interface SaveParams {
 }
 
 /**
- * Class encapsulating persistence logic (load/save) for the chunk/embedding index.
+ * Encapsulates persistence logic (load/save) for the chunk/embedding index.
  * An instance can be configured with a default store path + verbosity while each
  * call may still override those values if desired.
  */
 export class Persistence {
+  /** Filesystem path where the JSON index will be stored / read. */
   private storePath?: string;
+  /** Default verbosity for the instance (can be overridden per call). */
   private verbose: boolean;
 
-  constructor(storePath?: string, verbose = false) {
+  /**
+   * Create a new persistence helper.
+   * @param storePath Optional default file path for the persisted index (JSON file).
+   * @param verbose   Whether to emit verbose logging by default.
+   */
+  public constructor(storePath?: string, verbose = false) {
     this.storePath = storePath;
     this.verbose = verbose;
   }
 
-  setStorePath(p?: string) {
+  /**
+   * Update (or clear) the default store path used when callers do not supply one.
+   * @param p New path or undefined to clear.
+   */
+  public setStorePath(p?: string): void {
     this.storePath = p;
   }
 
-  setVerbose(v: boolean) {
+  /**
+   * Enable / disable verbose logging globally for subsequent calls.
+   * @param v True for verbose mode.
+   */
+  public setVerbose(v: boolean): void {
     this.verbose = v;
   }
 
   /**
-   * Attempt to load a previously persisted index from disk. Returns an array of
-   * docs if successful and compatible with the provided params, else null.
+   * Attempt to load a previously persisted index from disk.
+   * Returns an array of docs if successful and compatible with the provided params, else null.
    */
-  async load(
+  public async load(
     params: Omit<LoadParams, "storePath" | "verbose"> & { storePath?: string; verbose?: boolean },
   ): Promise<Doc[] | null> {
     const storePath = params.storePath ?? this.storePath;
@@ -107,7 +137,7 @@ export class Persistence {
   }
 
   /** Persist the current in-memory index to disk (if configured). */
-  async save(
+  public async save(
     params: Omit<SaveParams, "storePath" | "verbose"> & { storePath?: string; verbose?: boolean },
   ): Promise<void> {
     const storePath = params.storePath ?? this.storePath;
