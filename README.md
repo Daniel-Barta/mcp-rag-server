@@ -19,12 +19,14 @@ Two transports are supported (select with `MCP_TRANSPORT=stdio|http`):
 - Fast glob file discovery and overlapping chunking for better recall
 - Simple cosine similarity ranking (optionally swap to ANN later)
 - Pluggable model selection via `MODEL_NAME` (see guidance below)
-- Stdio or Streamable HTTP transport (with optional host allow‑list)
+- Optional persistent JSON index + warm start & incremental reindexing via `INDEX_STORE_PATH`
+- Incremental change detection (additions / deletions / file size changes) to avoid full rebuilds
+- Stdio or Streamable HTTP transport (with optional host allow‑list / DNS rebinding protection)
 - Safe path handling (rejects attempts to escape `REPO_ROOT`)
 - Minimal dependencies; quick startup after first model load
-- Ready for extension: add new MCP tools, persistent caches, or ANN indexes
+- Ready for extension: add new MCP tools or ANN / hybrid retrieval backends
 
-Planned / Nice‑to‑have (not yet implemented): persistent vector cache, incremental reindexing on file change, hybrid BM25 + embedding search, optional HNSW / IVF ANN acceleration, per‑language tokenizer heuristics.
+Planned / Nice‑to‑have: hybrid BM25 + embedding search, ANN acceleration (HNSW / IVF), per‑language tokenizer heuristics, batched / parallel embedding, semantic boundary aware chunking.
 
 ## Requirements
 
@@ -87,7 +89,25 @@ $env:REPO_ROOT="C:\path\to\your-repo"; $env:MCP_TRANSPORT="http"; npm start
 export REPO_ROOT="/path/to/your-repo"; MCP_TRANSPORT=http npm start
 ```
 
-Default HTTP bind: http://127.0.0.1:3000/mcp. Override with `HOST` and `MCP_PORT` envs. A readiness endpoint is available at `http://127.0.0.1:3000/health` returning JSON `{ ready, indexing:{...}, modelName, transport }`.
+Default HTTP bind: http://127.0.0.1:3000/mcp. Override with `HOST` and `MCP_PORT` envs. A readiness endpoint is available at `http://127.0.0.1:3000/health` returning JSON like:
+
+```
+{
+	"version": "0.x.y",
+	"repoRoot": "C:/abs/path",
+	"modelName": "<embedding model>",
+	"transport": "stdio" | "http",
+	"ready": true | false,
+	"startedAt": "2025-01-01T00:00:00.000Z",
+	"indexing": {
+		"filesDiscovered": 123,
+		"chunksTotal": 456,
+		"chunksEmbedded": 456
+	}
+}
+```
+
+`ready` flips to true only once all discovered chunks have embeddings (post cold build or incremental update completion).
 
 ### Linting & Formatting
 
@@ -169,6 +189,7 @@ Troubleshooting
 - Slow startup: set `TRANSFORMERS_CACHE` to a fast local folder and (optionally) set `ALLOWED_EXT` (e.g., `ts,tsx,js` for TypeScript/JS only, or any list you need).
 - Path errors: `path` must be relative to `REPO_ROOT`. Absolute paths are rejected for safety.
 - Nothing appears in Inspector for minutes: the server is still initializing (model download + embedding). This is expected on first run.
+  .- Slow warm restarts: provide `INDEX_STORE_PATH` so embeddings persist and only changed files re‑embed.
 
 ## Environment configuration (.env)
 
@@ -186,6 +207,7 @@ Supported variables:
 - `ALLOWED_EXT` (optional): comma-separated list of file extensions to index.
 - `MCP_TRANSPORT` (optional): `http` or `stdio`.
 - `VERBOSE` (optional): true/1/yes/on for more granular progress logs during indexing & embedding.
+- `INDEX_STORE_PATH` (optional): path to a persisted JSON embedding index (e.g., `C:\repo\.mcp-index.json` or `/repo/.mcp-index.json`). Enables fast warm starts + incremental reindex (new / deleted / size‑changed files only).
 - `MODEL_NAME` (optional): override the default embedding model (`jinaai/jina-embeddings-v2-base-code`). Examples:
   - `MODEL_NAME=jinaai/jina-embeddings-v2-base-code` (default) — Balanced multilingual/code embedding model; strong for mixed natural language + source code semantic search.
   - `MODEL_NAME=Xenova/bge-base-en-v1.5` — High-quality English general-purpose text embeddings (good for documentation/wiki style corpora).
@@ -202,6 +224,27 @@ Supported variables:
 - `CHUNK_OVERLAP` (optional): trailing characters carried into the next chunk (default 120 ≈ 15%). Recommended 10‑20% of `CHUNK_SIZE` (e.g., 80‑160 for an 800 size). Increase slightly (up to ~20‑25%) if you observe answers missing cross‑boundary context; decrease to speed up builds.
 
 Safety caps: `CHUNK_SIZE` is clamped to 8000 and `CHUNK_OVERLAP` to 4000; if overlap >= size it's automatically reduced (logged) to preserve forward progress.
+
+## Persistence & Incremental Reindexing
+
+Set `INDEX_STORE_PATH` to enable a persisted JSON index storing chunks + embeddings. On startup:
+
+1. If the file exists and its metadata (model name, chunk size, overlap) matches, it is loaded into memory.
+2. The repository is rescanned; removed files' chunks are discarded, and new or size‑changed files are re‑chunked & re‑embedded.
+3. The merged index is saved back (cold build path also persists when configured).
+
+Benefits:
+
+- Dramatically faster warm starts for large repositories.
+- Avoids re‑embedding unchanged content.
+
+Current limitations:
+
+- Change detection uses file size only (content edits keeping identical size won't re‑embed yet).
+- Embedding generation is sequential (no parallel batching yet).
+- Store schema is minimal (version 1); future versions may add hashing or mtime heuristics.
+
+Force a full rebuild by deleting the store file or changing chunk/model parameters.
 
 ## Visual Studio integration (MCP)
 
