@@ -1,10 +1,10 @@
 import fs from "node:fs/promises";
-import fsSync from "node:fs";
 import path from "node:path";
 import fg from "fast-glob";
 import { Embeddings } from "./embeddings";
 import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { statusManager } from "./status";
+import { Persistence } from "./persistence";
 
 /**
  * Represents a single chunk of source content (post splitting) with an optional
@@ -33,6 +33,7 @@ export interface BuildIndexOptions {
   chunkSize?: number; // optional override (default 800)
   chunkOverlap?: number; // optional override (default 120)
   storePath?: string; // optional persistent JSON store path (env-provided)
+  persistence?: Persistence; // optional injected persistence instance
 }
 
 /**
@@ -51,6 +52,7 @@ export class Indexer {
   private readonly chunkSize: number;
   private readonly chunkOverlap: number;
   private readonly storePath?: string;
+  private readonly persistence?: Persistence;
   private built = false;
 
   public constructor(opts: BuildIndexOptions) {
@@ -61,6 +63,9 @@ export class Indexer {
     this.chunkSize = opts.chunkSize ?? 800;
     this.chunkOverlap = opts.chunkOverlap ?? 120;
     this.storePath = opts.storePath;
+    this.persistence =
+      opts.persistence ??
+      (opts.storePath ? new Persistence(opts.storePath, this.verbose) : undefined);
     // Safety: ensure overlap < size for forward progress
     if (this.chunkOverlap >= this.chunkSize) {
       const fallback = Math.max(0, Math.floor(this.chunkSize * 0.15));
@@ -116,10 +121,29 @@ export class Indexer {
    */
   public async build(): Promise<void> {
     // Attempt incremental build if a persistent store exists and is compatible.
-    const storeUsed = await this.tryLoadStore();
-    if (storeUsed) {
+    const loadedDocs = this.persistence
+      ? await this.persistence.load({
+          storePath: this.storePath,
+          chunkSize: this.chunkSize,
+          chunkOverlap: this.chunkOverlap,
+          modelName: this.embeddings.getModelName(),
+          verbose: this.verbose,
+        })
+      : null;
+    if (loadedDocs) {
+      this.docs.length = 0;
+      this.docs.push(...loadedDocs);
       await this.incrementalUpdate();
-      await this.saveStore();
+      if (this.persistence) {
+        await this.persistence.save({
+          storePath: this.storePath,
+          docs: this.docs,
+          chunkSize: this.chunkSize,
+          chunkOverlap: this.chunkOverlap,
+          modelName: this.embeddings.getModelName(),
+          verbose: this.verbose,
+        });
+      }
       this.built = true;
       return;
     }
@@ -172,7 +196,16 @@ export class Indexer {
     console.error(`[MCP] Embeddings ready.`);
     statusManager.markReady();
     this.built = true;
-    await this.saveStore();
+    if (this.persistence) {
+      await this.persistence.save({
+        storePath: this.storePath,
+        docs: this.docs,
+        chunkSize: this.chunkSize,
+        chunkOverlap: this.chunkOverlap,
+        modelName: this.embeddings.getModelName(),
+        verbose: this.verbose,
+      });
+    }
   }
 
   /** Ensure a (possibly user-supplied) relative path stays within the indexer's root. */
@@ -308,74 +341,5 @@ export class Indexer {
     console.error(
       `[MCP] Incremental update complete. Changed files: ${changed.length}, removed: ${removed.length}. Total chunks: ${this.docs.length}`,
     );
-  }
-
-  private async tryLoadStore(): Promise<boolean> {
-    if (!this.storePath) return false;
-    if (!fsSync.existsSync(this.storePath)) return false;
-    try {
-      const raw = await fs.readFile(this.storePath, "utf8");
-      const parsed = JSON.parse(raw);
-      if (!parsed || !Array.isArray(parsed.docs)) return false;
-      // Validate model / chunk params compatibility
-      const meta = parsed.meta || {};
-      if (
-        meta.chunkSize !== this.chunkSize ||
-        meta.chunkOverlap !== this.chunkOverlap ||
-        (meta.modelName && meta.modelName !== this.embeddings.getModelName())
-      ) {
-        console.error(
-          `[MCP] Stored index incompatible (model/chunk params differ). Performing cold rebuild.`,
-        );
-        return false;
-      }
-      this.docs.length = 0;
-      for (const d of parsed.docs) {
-        if (!d || typeof d !== "object") continue;
-        const { id, path: p, chunk, text, fileSize, emb } = d as any;
-        if (
-          typeof id !== "string" ||
-          typeof p !== "string" ||
-          typeof chunk !== "number" ||
-          typeof text !== "string" ||
-          typeof fileSize !== "number" ||
-          !Array.isArray(emb)
-        )
-          continue;
-        this.docs.push({ id, path: p, chunk, text, fileSize, emb: new Float32Array(emb) });
-      }
-      console.error(`[MCP] Loaded persisted index: ${this.docs.length} chunks.`);
-      return true;
-    } catch (e) {
-      console.error(`[MCP] Failed to load store at ${this.storePath}:`, e);
-      return false;
-    }
-  }
-
-  private async saveStore(): Promise<void> {
-    if (!this.storePath) return; // not configured
-    try {
-      const out = {
-        version: 1,
-        meta: {
-          chunkSize: this.chunkSize,
-          chunkOverlap: this.chunkOverlap,
-          modelName: this.embeddings.getModelName(),
-          savedAt: new Date().toISOString(),
-        },
-        docs: this.docs.map((d) => ({
-          id: d.id,
-          path: d.path,
-          chunk: d.chunk,
-          text: d.text,
-          fileSize: d.fileSize,
-          emb: Array.from(d.emb ?? []),
-        })),
-      };
-      await fs.writeFile(this.storePath, JSON.stringify(out));
-      if (this.verbose) console.error(`[MCP][verbose] Persisted index to ${this.storePath}`);
-    } catch (e) {
-      console.error(`[MCP] Failed to save index store:`, e);
-    }
   }
 }
