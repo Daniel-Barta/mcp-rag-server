@@ -7,7 +7,31 @@ import { statusManager } from "./status";
 import { Persistence } from "./persistence";
 import { Doc } from "./types";
 
-// Doc type now sourced from shared types.ts (removed local duplicate definition)
+/**
+ * Indexer module
+ * ----------------
+ * Responsible for turning a repository (or arbitrary directory tree) into an in‑memory
+ * semantic index:
+ *   1. Discover source files by allowed extensions.
+ *   2. Read & chunk file contents with optional overlap for better context recall.
+ *   3. Generate embeddings via an {@link Embeddings} implementation.
+ *   4. (Optionally) Persist / reload the index for fast incremental startup.
+ *
+ * The current implementation favors simplicity over ultimate performance:
+ *   - Single threaded / sequential embedding generation.
+ *   - Naïve change detection (file size heuristic) for incremental updates.
+ *   - Entire corpus retained in memory (sufficient for medium repos / prototypes).
+ *
+ * For large monorepos or production scale you might extend this with:
+ *   - Parallel file reads & batched embedding calls.
+ *   - Stronger change detection (hashes, mtime, content diff windows).
+ *   - Pluggable vector store (e.g. SQLite / pgvector / Qdrant / LanceDB / etc.).
+ *   - Smarter chunking (semantic boundaries, token aware splitting).
+ *
+ * Security note: {@link ensureWithinRoot} defends against directory traversal when
+ * user‑supplied relative paths are resolved. Always use it before reading a file path
+ * received from an external request.
+ */
 
 /**
  * Options required to construct an {@link Indexer}. All fields are mandatory
@@ -25,11 +49,30 @@ export interface BuildIndexOptions {
 }
 
 /**
- * High-level orchestrator for: file discovery, content chunking, and embedding
- * generation. The full corpus (chunks + embeddings) is kept in-memory for
- * simplicity / speed; for large repositories consider persisting to disk or a
- * vector store. A single "build" pass is currently supported (no incremental
- * update logic yet).
+ * High-level orchestrator for file discovery, chunking, embedding generation, and
+ * optional persistence / incremental refresh.
+ *
+ * Typical lifecycle:
+ * ```ts
+ * const embeddings = new Embeddings();
+ * await Embeddings.configureCache();
+ * await embeddings.init();
+ *
+ * const indexer = new Indexer({
+ *   root: repoRoot,
+ *   allowedExt: ["ts", "tsx", "js", "md"],
+ *   embeddings,
+ *   storePath: path.join(repoRoot, ".mcp-index.json"),
+ *   verbose: true,
+ * });
+ * await indexer.build();
+ * if (!indexer.isReady()) throw new Error("Index failed");
+ * const docs = indexer.getDocs(); // inspect / search over docs & embeddings
+ * ```
+ *
+ * Concurrency: a single instance is not currently thread-safe for concurrent
+ * build operations; call {@link build} once and reuse the resulting in-memory
+ * data. Reading via {@link getDocs} is safe after readiness.
  */
 export class Indexer {
   private readonly root: string;
@@ -49,18 +92,22 @@ export class Indexer {
     this.embeddings = opts.embeddings;
     this.verbose = !!opts.verbose;
     this.chunkSize = opts.chunkSize ?? 800;
-    this.chunkOverlap = opts.chunkOverlap ?? 120;
+    // Resolve requested overlap then clamp if invalid (must be < chunk size). We compute
+    // final value up-front so the property can remain readonly (no later mutation).
+    const requestedOverlap = opts.chunkOverlap ?? 120;
+    this.chunkOverlap =
+      requestedOverlap >= this.chunkSize
+        ? Math.max(0, Math.floor(this.chunkSize * 0.15)) // conservative fallback (~15%)
+        : requestedOverlap;
     this.storePath = opts.storePath;
     this.persistence =
       opts.persistence ??
       (opts.storePath ? new Persistence(opts.storePath, this.verbose) : undefined);
-    // Safety: ensure overlap < size for forward progress
-    if (this.chunkOverlap >= this.chunkSize) {
-      const fallback = Math.max(0, Math.floor(this.chunkSize * 0.15));
+    // If fallback was applied, emit a warning (compare to originally requested value).
+    if (this.chunkOverlap !== requestedOverlap && requestedOverlap >= this.chunkSize) {
       console.error(
-        `[MCP] Provided chunkOverlap (=${this.chunkOverlap}) >= chunkSize (=${this.chunkSize}). Using fallback overlap ${fallback}.`,
+        `[MCP] Provided chunkOverlap (=${requestedOverlap}) >= chunkSize (=${this.chunkSize}). Using fallback overlap ${this.chunkOverlap}.`,
       );
-      this.chunkOverlap = fallback;
     }
   }
 
@@ -216,6 +263,13 @@ export class Indexer {
 
   // -------------------- Persistence & Incremental Logic --------------------
 
+  /**
+   * File discovery
+   *  - Uses fast-glob for pattern expansion (extension based filtering only).
+   *  - Excludes dot files/directories by default (dot: false).
+   *  - Returns only regular files with their relative path & size for later
+   *    lightweight change detection.
+   */
   private async discoverFiles(): Promise<{ rel: string; abs: string; size: number }[]> {
     const patterns = this.allowedExt.map((ext) => `**/*.${ext}`);
     const files = await fg(patterns, { cwd: this.root, dot: false, absolute: true });
@@ -232,6 +286,10 @@ export class Indexer {
     return infos;
   }
 
+  /**
+   * Determine the current maximum numeric chunk id so newly added chunks can
+   * continue the monotonic sequence after an incremental update load.
+   */
   private getMaxId(): number {
     let max = -1;
     for (const d of this.docs) {
@@ -241,6 +299,17 @@ export class Indexer {
     return max;
   }
 
+  /**
+   * Incremental update strategy:
+   *  1. Re-scan current file list & sizes.
+   *  2. Remove chunks for deleted files.
+   *  3. For each existing file compare stored size to current size; if changed,
+   *     drop old chunks & re-ingest (size acts as a coarse change heuristic).
+   *  4. Embed only new / changed chunks, credit existing ones in status metrics.
+   *
+   * NOTE: File size collisions (different content, same size) won’t trigger a re-embed.
+   * For higher fidelity consider hashing content or comparing mtimes.
+   */
   private async incrementalUpdate(): Promise<void> {
     console.error(`[MCP] Incremental index check starting...`);
     const fileInfos = await this.discoverFiles();
