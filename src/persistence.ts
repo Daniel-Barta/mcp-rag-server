@@ -1,15 +1,6 @@
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
-
-// Lightweight structural type (kept duplicate to avoid circular import with indexer)
-export type PersistDoc = {
-  id: string;
-  path: string;
-  chunk: number;
-  text: string;
-  fileSize: number;
-  emb?: Float32Array;
-};
+import { Doc } from "./types";
 
 export interface LoadParams {
   storePath?: string;
@@ -21,7 +12,7 @@ export interface LoadParams {
 
 export interface SaveParams {
   storePath?: string;
-  docs: PersistDoc[];
+  docs: Doc[];
   chunkSize: number;
   chunkOverlap: number;
   modelName: string;
@@ -56,7 +47,7 @@ export class Persistence {
    */
   async load(
     params: Omit<LoadParams, "storePath" | "verbose"> & { storePath?: string; verbose?: boolean },
-  ): Promise<PersistDoc[] | null> {
+  ): Promise<Doc[] | null> {
     const storePath = params.storePath ?? this.storePath;
     const verbose = params.verbose ?? this.verbose;
     const { chunkSize, chunkOverlap, modelName } = params;
@@ -77,7 +68,7 @@ export class Persistence {
         );
         return null;
       }
-      const docs: PersistDoc[] = [];
+      const docs: Doc[] = [];
       for (const d of parsed.docs) {
         if (!d || typeof d !== "object") continue;
         const { id, path: p, chunk, text, fileSize, emb } = d as any;

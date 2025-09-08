@@ -5,21 +5,9 @@ import { Embeddings } from "./embeddings";
 import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { statusManager } from "./status";
 import { Persistence } from "./persistence";
+import { Doc } from "./types";
 
-/**
- * Represents a single chunk of source content (post splitting) with an optional
- * embedding vector. Chunks are addressed by monotonically increasing string
- * IDs (unique only within the current process lifecycle) plus their file path
- * and in-file chunk index. The raw text is retained in-memory for fast scoring.
- */
-export type Doc = {
-  id: string;
-  path: string; // file path relative to repo root
-  chunk: number; // chunk index within file
-  text: string; // chunk text content
-  fileSize: number; // size in bytes of the ORIGINAL full file (duplicated across chunks)
-  emb?: Float32Array; // embedding vector once generated
-};
+// Doc type now sourced from shared types.ts (removed local duplicate definition)
 
 /**
  * Options required to construct an {@link Indexer}. All fields are mandatory
