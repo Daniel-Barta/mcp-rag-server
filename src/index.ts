@@ -112,6 +112,7 @@ const indexer = new Indexer({
   verbose: VERBOSE,
   chunkSize: CHUNK_SIZE,
   chunkOverlap: CHUNK_OVERLAP,
+  storePath: process.env.INDEX_STORE_PATH?.trim() || undefined,
 });
 
 /**
