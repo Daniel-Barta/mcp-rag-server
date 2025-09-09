@@ -45,121 +45,58 @@ import {
   ErrorCode,
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
-import dotenv from "dotenv";
-import fsSync from "node:fs";
 import fs from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { Embeddings } from "./embeddings";
 import { Indexer } from "./indexer";
 import { startHttpTransport } from "./transport/http";
 import { startStdioTransport } from "./transport/stdio";
 import { statusManager } from "./status";
+import { getConfig, Config } from "./config";
 
-// Centralized single dotenv.config() call.
-// If executing compiled code inside build/, resolve ../.env (project root). Otherwise use default.
-// Keeping this logic isolated avoids multiple dotenv loads & accidental override order issues.
-(() => {
-  try {
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = path.dirname(__filename);
-    const rootEnv = path.resolve(__dirname, "../.env");
-    if (fsSync.existsSync(rootEnv)) {
-      dotenv.config({ path: rootEnv });
-      return;
-    }
-  } catch {
-    /* ignore and fall back */
-  }
-  dotenv.config();
-})();
+const config: Config = await getConfig();
+const {
+  ROOT,
+  ALLOWED_EXT,
+  EXCLUDED_FOLDERS,
+  VERBOSE,
+  CHUNK_SIZE,
+  CHUNK_OVERLAP,
+  FOLDER_INFO_NAME,
+  INDEX_STORE_PATH,
+  MCP_TRANSPORT,
+} = config;
+
+statusManager.setRepoRoot(ROOT);
+
+// Define interfaces for tool arguments to replace 'any' usage
+interface RagQueryArgs {
+  query: string;
+  top_k?: number;
+}
+
+interface ReadFileArgs {
+  path: string;
+  startLine?: number;
+  endLine?: number;
+}
+
+// Define interfaces for tool arguments to replace 'any' usage
+interface RagQueryArgs {
+  query: string;
+  top_k?: number;
+}
+
+interface ReadFileArgs {
+  path: string;
+  startLine?: number;
+  endLine?: number;
+}
 
 // Configure transformers cache directory ASAP, before any model/pipeline is created.
 // Doing this early ensures downstream libraries (e.g. HuggingFace) honor the path.
 await Embeddings.configureCache().catch((e) =>
   console.error("[MCP] Failed to set TRANSFORMERS cache directory:", e),
 );
-
-// Canonical repository root. If unset we keep a conspicuous placeholder to nudge configuration.
-const ROOT = process.env.REPO_ROOT?.trim() || "C:/path/to/your/repository";
-statusManager.setRepoRoot(ROOT);
-// Normalize ALLOWED_EXT once; downstream components assume a clean string[].
-const ALLOWED_EXT = process.env.ALLOWED_EXT?.split(",")
-  .map((s) => s.trim())
-  .filter(Boolean) ?? [
-  // Common code/text extensions (customize via ALLOWED_EXT)
-  "ts",
-  "tsx",
-  "js",
-  "jsx",
-  "py",
-  "cs",
-  "java",
-  "kt",
-  "kts",
-  "go",
-  "rs",
-  "cpp",
-  "c",
-  "h",
-  "hpp",
-  "rb",
-  "php",
-  "swift",
-  "scala",
-  "md",
-  "txt",
-  "gradle",
-  "groovy",
-  "json",
-  "yaml",
-  "yml",
-  "xml",
-  "proto",
-  "properties",
-];
-
-// Folder names (not globs) pruned early during directory traversal.
-const EXCLUDED_FOLDERS = process.env.EXCLUDED_FOLDERS?.split(",")
-  .map((s) => s.trim())
-  .filter(Boolean) ?? [
-  // Common folders to exclude (customize via EXCLUDED_FOLDERS)
-  "node_modules",
-  "dist",
-  "build",
-  ".git",
-  "target",
-  "bin",
-  "obj",
-  ".cache",
-  "coverage",
-  ".nyc_output",
-];
-
-// Verbosity toggle with tolerant truthy parsing (supports several common forms).
-const VERBOSE = (() => {
-  const v = (process.env.VERBOSE ?? "").trim().toLowerCase();
-  return v === "1" || v === "true" || v === "yes" || v === "on";
-})();
-
-// Chunk sizing (optional env overrides; defaults 800 / 120)
-// Chunk size impacts recall (too large) vs. precision (too small). Trade‑off is tunable.
-const CHUNK_SIZE = (() => {
-  const raw = process.env.CHUNK_SIZE?.trim();
-  if (!raw) return 800;
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? Math.min(8000, Math.floor(n)) : 800; // clamp to sane upper bound
-})();
-// Overlap helps preserve context continuity across semantic chunks.
-const CHUNK_OVERLAP = (() => {
-  const raw = process.env.CHUNK_OVERLAP?.trim();
-  if (!raw) return 120;
-  const n = Number(raw);
-  return Number.isFinite(n) && n >= 0 ? Math.min(4000, Math.floor(n)) : 120;
-})();
-
-// Human‑friendly label used purely in tool descriptions; does not affect disk paths.
-const FOLDER_INFO_NAME = process.env.FOLDER_INFO_NAME?.trim() || "REPO_ROOT";
 
 // Initialize embedding model (model name resolved internally). Errors surface
 // early rather than lazily inside the first tool invocation, improving debuggability
@@ -176,7 +113,7 @@ const indexer = new Indexer({
   verbose: VERBOSE,
   chunkSize: CHUNK_SIZE,
   chunkOverlap: CHUNK_OVERLAP,
-  storePath: process.env.INDEX_STORE_PATH?.trim() || undefined,
+  storePath: INDEX_STORE_PATH,
 });
 
 /**
@@ -239,7 +176,7 @@ function createServer() {
         },
         {
           name: "read_file",
-          description: "Read a specific file (optionally a line range).",
+          description: `Read a specific file under '${FOLDER_INFO_NAME}' folder (optionally a line range).`,
           inputSchema: {
             type: "object",
             description: "Read file request parameters.",
@@ -271,7 +208,7 @@ function createServer() {
   // Tool execution router: branch on tool name. Keep logic compact; heavy work delegated.
   server.setRequestHandler(CallToolRequestSchema, async (req: any) => {
     if (req.params.name === "rag_query") {
-      const { query, top_k = 5 } = (req.params.arguments ?? {}) as any;
+      const { query, top_k = 5 } = (req.params.arguments ?? {}) as RagQueryArgs;
       if (!query) throw new McpError(ErrorCode.InvalidRequest, "Missing query");
 
       // Embed query once then compute cosine similarity against all chunk vectors (in‑memory scan).
@@ -290,7 +227,7 @@ function createServer() {
     }
 
     if (req.params.name === "read_file") {
-      const { path: rel, startLine, endLine } = (req.params.arguments ?? {}) as any;
+      const { path: rel, startLine, endLine } = (req.params.arguments ?? {}) as ReadFileArgs;
       if (!rel) throw new McpError(ErrorCode.InvalidRequest, "Missing path");
       const abs = indexer.ensureWithinRoot(rel); // throws on traversal escape attempt
       const content = await fs.readFile(abs, "utf8");
@@ -321,7 +258,7 @@ await indexer.build();
 // Choose transport: stdio (default) or streamable HTTP via MCP_TRANSPORT=http|stdio
 // HTTP mode enables readiness probing & potential horizontal scaling (each process
 // maintaining its own in‑memory index) behind a load balancer.
-const transportEnv = (process.env.MCP_TRANSPORT ?? "").trim().toLowerCase();
+const transportEnv = MCP_TRANSPORT;
 const useHttp = transportEnv === "http" || transportEnv === "streamable-http";
 
 if (useHttp) {
