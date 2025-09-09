@@ -204,6 +204,7 @@ Steps:
 Supported variables:
 
 - `REPO_ROOT` (required): path to the repository to index.
+- `FOLDER_INFO_NAME` (optional): display label used inside MCP tool descriptions for the repository root (default `REPO_ROOT`). This is purely cosmetic for client UX; it does NOT affect which directory is indexed (that is controlled only by `REPO_ROOT`). Set it if you prefer a friendlier name (e.g., `frontend-app` or `monorepo-root`) to appear in tool metadata and path guidance returned to the client.
 - `TRANSFORMERS_CACHE` (optional): cache folder for model files.
 - `ALLOWED_EXT` (optional): comma-separated list of file extensions to index.
 - `EXCLUDED_FOLDERS` (optional): comma-separated list of folder patterns to exclude from indexing. Supports both exact folder names (e.g., `node_modules,dist,build,.git`) and basic glob patterns (e.g., `**/test/**,**/tests/**`). Files in these folders will be skipped during indexing. Defaults include common build/dependency folders: `node_modules`, `dist`, `build`, `.git`, `target`, `bin`, `obj`, `.cache`, `coverage`, `.nyc_output`.

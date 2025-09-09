@@ -115,6 +115,8 @@ const CHUNK_OVERLAP = (() => {
   return Number.isFinite(n) && n >= 0 ? Math.min(4000, Math.floor(n)) : 120;
 })();
 
+const FOLDER_INFO_NAME = process.env.FOLDER_INFO_NAME?.trim() || "REPO_ROOT";
+
 // Initialize embedding model (model name resolved internally). Errors surface
 // early rather than lazily inside the first tool invocation.
 const embeddings = new Embeddings();
@@ -148,8 +150,7 @@ function createServer() {
       tools: [
         {
           name: "rag_query",
-          description:
-            "Semantically search files under REPO_ROOT and return relevant chunks with metadata: id, path, snippet (chunk text), score, totalLines (original file lineCount), fileSize (bytes).",
+          description: `Semantically search files under '${FOLDER_INFO_NAME}' folder and return relevant chunks with metadata: id, path, snippet (chunk text), score, totalLines (original file lineCount), fileSize (bytes).`,
           inputSchema: {
             type: "object",
             description: "RAG semantic search request parameters.",
@@ -179,7 +180,7 @@ function createServer() {
             properties: {
               path: {
                 type: "string",
-                description: "Path to file relative to REPO_ROOT (use forward slashes).",
+                description: `Path to file relative to '${FOLDER_INFO_NAME}' folder (use forward slashes).`,
               },
               startLine: {
                 type: "number",
