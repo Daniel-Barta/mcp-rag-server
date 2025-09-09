@@ -46,6 +46,7 @@ import {
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
 import fs from "node:fs/promises";
+import path from "node:path";
 import { Embeddings } from "./embeddings";
 import { Indexer } from "./indexer";
 import { startHttpTransport } from "./transport/http";
@@ -68,28 +69,27 @@ const {
 
 statusManager.setRepoRoot(ROOT);
 
-// Define interfaces for tool arguments to replace 'any' usage
+// Tool argument interfaces
 interface RagQueryArgs {
   query: string;
   top_k?: number;
 }
-
 interface ReadFileArgs {
   path: string;
   startLine?: number;
   endLine?: number;
 }
-
-// Define interfaces for tool arguments to replace 'any' usage
-interface RagQueryArgs {
-  query: string;
-  top_k?: number;
-}
-
-interface ReadFileArgs {
-  path: string;
-  startLine?: number;
-  endLine?: number;
+interface ListFilesArgs {
+  /** Directory relative to ROOT to list. Omit or use "." for repo root. */
+  dir?: string;
+  /** Whether to recurse into subfolders (default false). */
+  recursive?: boolean;
+  /** Maximum recursion depth (only when recursive=true). 0 = only the dir itself. */
+  maxDepth?: number;
+  /** Optional list of extensions (no leading dot) to include (files only). */
+  includeExtensions?: string[];
+  /** Maximum number of total entries (files + dirs) to return. Default 500. */
+  limit?: number;
 }
 
 // Configure transformers cache directory ASAP, before any model/pipeline is created.
@@ -201,6 +201,42 @@ function createServer() {
             required: ["path"],
           },
         },
+        {
+          name: "list_files",
+          description: `List files (and subdirectories) within a directory under '${FOLDER_INFO_NAME}' folder. Supports optional recursion, depth limit, and extension filtering. Returned paths are always relative to '${FOLDER_INFO_NAME}'.`,
+          inputSchema: {
+            type: "object",
+            description: "List directory contents parameters.",
+            properties: {
+              dir: {
+                type: "string",
+                description: "Directory path relative to root. Omit or '.' for repository root.",
+              },
+              recursive: {
+                type: "boolean",
+                description: "Recurse into subdirectories (default false).",
+              },
+              maxDepth: {
+                type: "number",
+                description:
+                  "Maximum recursion depth when recursive=true (default unlimited). Depth 0 lists only the directory itself.",
+                minimum: 0,
+              },
+              includeExtensions: {
+                type: "array",
+                description:
+                  "Optional whitelist of file extensions (no leading dots). If provided, only files with these extensions are returned.",
+                items: { type: "string" },
+              },
+              limit: {
+                type: "number",
+                description:
+                  "Maximum number of entries to return (files + dirs). Default 500; hard cap 5000.",
+                minimum: 1,
+              },
+            },
+          },
+        },
       ],
     };
   });
@@ -238,6 +274,80 @@ function createServer() {
         return { toolResult: lines.slice(s, e).join("\n") };
       }
       return { toolResult: content };
+    }
+
+    if (req.params.name === "list_files") {
+      const {
+        dir = ".",
+        recursive = false,
+        maxDepth,
+        includeExtensions,
+        limit = 500,
+      } = (req.params.arguments ?? {}) as ListFilesArgs;
+
+      // Basic validation
+      const cap = Math.min(5000, Math.max(1, limit));
+      const normalizedDir = dir === "." ? "" : dir.replace(/^\.\/?/, "");
+      const absBase = indexer.ensureWithinRoot(normalizedDir);
+      // Confirm it's a directory
+      let st: any;
+      try {
+        st = await fs.stat(absBase);
+      } catch {
+        throw new McpError(ErrorCode.InvalidRequest, "Directory does not exist");
+      }
+      if (!st.isDirectory()) {
+        throw new McpError(ErrorCode.InvalidRequest, "Path is not a directory");
+      }
+
+      const extsSet = includeExtensions?.length
+        ? new Set(includeExtensions.map((e) => e.toLowerCase().replace(/^\./, "")))
+        : null;
+
+      type Entry = { path: string; type: "file" | "dir"; size?: number };
+      const out: Entry[] = [];
+
+      async function walk(currentAbs: string, depth: number) {
+        if (out.length >= cap) return; // respect limit
+        let dirents: any[];
+        try {
+          dirents = await fs.readdir(currentAbs, { withFileTypes: true });
+        } catch {
+          return; // unreadable directory
+        }
+        for (const d of dirents) {
+          if (out.length >= cap) break;
+          // Compute relative path using platform-agnostic forward slashes
+          const relAbs = path.join(currentAbs, d.name);
+          const relToRoot = path.relative(ROOT, relAbs).split(path.sep).join("/");
+          if (d.isDirectory()) {
+            out.push({ path: relToRoot + "/", type: "dir" });
+            if (recursive) {
+              const nextDepth = depth + 1;
+              if (maxDepth == null || nextDepth <= maxDepth) {
+                await walk(relAbs, nextDepth);
+              }
+            }
+          } else if (d.isFile()) {
+            const ext = d.name.includes(".") ? d.name.split(".").pop()!.toLowerCase() : "";
+            if (extsSet && !extsSet.has(ext)) continue;
+            try {
+              const fst = await fs.stat(relAbs);
+              out.push({ path: relToRoot, type: "file", size: fst.size });
+            } catch {
+              /* ignore file stat errors */
+            }
+          }
+        }
+      }
+
+      await walk(absBase, 0);
+      // deterministic alphabetical ordering (directories first, then files)
+      out.sort((a, b) => {
+        if (a.type !== b.type) return a.type === "dir" ? -1 : 1;
+        return a.path.localeCompare(b.path);
+      });
+      return { toolResult: { entries: out } };
     }
 
     throw new McpError(ErrorCode.MethodNotFound, "Unknown method");

@@ -2,10 +2,11 @@
 
 `mcp-rag-server` is a lightweight, zero‑network (after model download) Retrieval‑Augmented Generation helper you can plug into **any client that speaks the [Model Context Protocol (MCP)]**. GitHub Copilot Agent mode in Visual Studio / VS Code is just one option – you can also use the official MCP Inspector, future MCP‑aware IDEs, or custom tooling.
 
-It indexes a target repository directory, chunks the content (default chunk size **800** chars with **120** char overlap – both configurable via `CHUNK_SIZE` / `CHUNK_OVERLAP`), builds **local embeddings** using `@xenova/transformers`, and exposes two MCP tools:
+It indexes a target repository directory, chunks the content (default chunk size **800** chars with **120** char overlap – both configurable via `CHUNK_SIZE` / `CHUNK_OVERLAP`), builds **local embeddings** using `@xenova/transformers`, and exposes MCP tools:
 
 - `rag_query` – semantic search returning scored snippets (path, score, snippet)
 - `read_file` – secure file read (optional line range) constrained to `REPO_ROOT`
+- `list_files` – list directory contents (files & subdirectories) with optional recursion, depth and extension filtering
 
 Two transports are supported (select with `MCP_TRANSPORT=stdio|http`):
 
@@ -155,7 +156,7 @@ Notes:
 
 In the Inspector UI:
 
-- Click "List tools" to verify these tools are available: `rag_query`, `read_file`.
+- Click "List tools" to verify these tools are available: `rag_query`, `read_file`, `list_files`.
 - Select a tool and click "Call tool". Provide JSON input as shown below.
 
 Examples
@@ -173,7 +174,44 @@ Input JSON:
 
 The response includes an array of matches with `path`, `score`, and `snippet`.
 
-2. Read a file (optionally with a line range)
+2. List files in a directory (non-recursive by default)
+
+```
+Tool: list_files
+Input JSON:
+{
+	"dir": "src",
+	"recursive": false
+}
+```
+
+Recursive with filters and limits:
+
+```
+Tool: list_files
+Input JSON:
+{
+	"dir": "src",
+	"recursive": true,
+	"maxDepth": 3,
+	"includeExtensions": ["ts", "md"],
+	"limit": 200
+}
+```
+
+Response shape:
+
+```
+{
+	"entries": [
+		{ "path": "src/", "type": "dir" },
+		{ "path": "src/index.ts", "type": "file", "size": 1234 },
+		{ "path": "src/lib/", "type": "dir" }
+	]
+}
+```
+
+3. Read a file (optionally with a line range)
 
 ```
 Tool: read_file

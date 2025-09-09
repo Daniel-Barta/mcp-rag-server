@@ -283,8 +283,11 @@ export class Indexer {
   public static ensureWithinRoot(root: string, relPath: string): string {
     const abs = path.resolve(root, relPath);
     const normRoot = path.resolve(root) + path.sep;
-    if (!abs.startsWith(normRoot))
+    // Permit the root directory itself (abs === root). Original logic required
+    // a trailing separator which excluded the root path when listing it.
+    if (abs !== path.resolve(root) && !abs.startsWith(normRoot)) {
       throw new McpError(ErrorCode.InvalidRequest, "Path outside ROOT");
+    }
     return abs;
   }
 
