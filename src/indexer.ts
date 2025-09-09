@@ -34,18 +34,35 @@ import { Doc } from "./types";
  */
 
 /**
- * Options required to construct an {@link Indexer}. All fields are mandatory
- * except `verbose` which enables periodic progress logging.
+ * Construction options for an {@link Indexer} instance.
+ *
+ * Invariants / expectations:
+ *  - `root` must exist & be an accessible directory before {@link build} is invoked.
+ *  - `allowedExt` items are provided without a leading dot (e.g. `"ts"`, not `".ts"`).
+ *  - If both `storePath` and `persistence` are supplied, the explicit `persistence`
+ *    instance is used (allowing DI / testing) and `storePath` is still forwarded in
+ *    load / save calls.
+ *  - `chunkOverlap < chunkSize` (the constructor will clamp & warn if violated).
  */
 export interface BuildIndexOptions {
-  root: string; // repository root directory
-  allowedExt: string[]; // list of file extensions WITHOUT leading dot
-  embeddings: Embeddings; // initialized embeddings instance
-  verbose?: boolean; // extra logging
-  chunkSize?: number; // optional override (default 800)
-  chunkOverlap?: number; // optional override (default 120)
-  storePath?: string; // optional persistent JSON store path (env-provided)
-  persistence?: Persistence; // optional injected persistence instance
+  /** Absolute repository (or corpus) root directory */
+  root: string;
+  /** File extensions (no leading dots) that will be indexed */
+  allowedExt: string[];
+  /** Optional folder names / glob patterns to exclude (example: ["node_modules", "dist"]) */
+  excludedFolders?: string[];
+  /** Initialized embeddings provider (must be ready before build) */
+  embeddings: Embeddings;
+  /** Enable additional progress logging to stderr */
+  verbose?: boolean;
+  /** Characters per chunk (default 800). Larger => fewer vectors, less locality */
+  chunkSize?: number;
+  /** Trailing character overlap between consecutive chunks (default 120) */
+  chunkOverlap?: number;
+  /** Optional JSON persistence path (for warm start / incremental updates) */
+  storePath?: string;
+  /** Optional injected persistence implementation (useful for tests / alternates) */
+  persistence?: Persistence;
 }
 
 /**
@@ -77,6 +94,7 @@ export interface BuildIndexOptions {
 export class Indexer {
   private readonly root: string;
   private readonly allowedExt: string[];
+  private readonly excludedFolders: string[];
   private readonly embeddings: Embeddings;
   private readonly verbose: boolean;
   private readonly docs: Doc[] = [];
@@ -89,6 +107,7 @@ export class Indexer {
   public constructor(opts: BuildIndexOptions) {
     this.root = opts.root;
     this.allowedExt = opts.allowedExt;
+    this.excludedFolders = opts.excludedFolders ?? [];
     this.embeddings = opts.embeddings;
     this.verbose = !!opts.verbose;
     this.chunkSize = opts.chunkSize ?? 800;
@@ -136,6 +155,12 @@ export class Indexer {
    * @returns Ordered list of chunk strings.
    */
   public static splitChunks(text: string, size = 800, overlap = 120): string[] {
+    // NOTE: This splitter is intentionally naïve (pure character length). For
+    // better semantic coherence consider: token-aware splitting (tiktoken),
+    // markdown / code block boundary detection, or AST / LSP assisted segmenting.
+    // Complexity: O(n) where n = text.length (single pass slicing arithmetic).
+    // Memory: Each chunk is a substring copy (JS engines may slice lazily but
+    // callers should treat memory proportional to number_of_chunks * size).
     const out: string[] = [];
     let i = 0;
     while (i < text.length) {
@@ -267,22 +292,45 @@ export class Indexer {
    * File discovery
    *  - Uses fast-glob for pattern expansion (extension based filtering only).
    *  - Excludes dot files/directories by default (dot: false).
+   *  - Filters out files in excluded folder patterns.
    *  - Returns only regular files with their relative path & size for later
    *    lightweight change detection.
    */
   private async discoverFiles(): Promise<{ rel: string; abs: string; size: number }[]> {
     const patterns = this.allowedExt.map((ext) => `**/*.${ext}`);
-    const files = await fg(patterns, { cwd: this.root, dot: false, absolute: true });
+
+    // Build ignore patterns for excluded folders
+    const ignorePatterns = this.excludedFolders.map((folder) => {
+      // Support both exact folder names and glob patterns
+      if (folder.includes("*") || folder.includes("?")) {
+        return folder; // It's already a glob pattern
+      }
+      return `**/${folder}/**`; // Convert folder name to glob pattern
+    });
+
+    const files = await fg(patterns, {
+      cwd: this.root,
+      dot: false,
+      absolute: true,
+      ignore: ignorePatterns,
+    });
+
     const infos: { rel: string; abs: string; size: number }[] = [];
     for (const abs of files) {
       try {
         const st = await fs.stat(abs);
         if (!st.isFile()) continue;
-        infos.push({ rel: path.relative(this.root, abs), abs, size: st.size });
+        const rel = path.relative(this.root, abs);
+        infos.push({ rel, abs, size: st.size });
       } catch {
         /* ignore */
       }
     }
+
+    if (this.verbose && this.excludedFolders.length > 0) {
+      console.error(`[MCP][verbose] Excluded folder patterns: ${this.excludedFolders.join(", ")}`);
+    }
+
     return infos;
   }
 

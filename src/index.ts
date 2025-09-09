@@ -80,6 +80,22 @@ const ALLOWED_EXT = process.env.ALLOWED_EXT?.split(",")
   "properties",
 ];
 
+const EXCLUDED_FOLDERS = process.env.EXCLUDED_FOLDERS?.split(",")
+  .map((s) => s.trim())
+  .filter(Boolean) ?? [
+  // Common folders to exclude (customize via EXCLUDED_FOLDERS)
+  "node_modules",
+  "dist",
+  "build",
+  ".git",
+  "target",
+  "bin",
+  "obj",
+  ".cache",
+  "coverage",
+  ".nyc_output",
+];
+
 const VERBOSE = (() => {
   const v = (process.env.VERBOSE ?? "").trim().toLowerCase();
   return v === "1" || v === "true" || v === "yes" || v === "on";
@@ -108,6 +124,7 @@ statusManager.setModelName(embeddings.getModelName());
 const indexer = new Indexer({
   root: ROOT,
   allowedExt: ALLOWED_EXT,
+  excludedFolders: EXCLUDED_FOLDERS,
   embeddings,
   verbose: VERBOSE,
   chunkSize: CHUNK_SIZE,

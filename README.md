@@ -16,6 +16,7 @@ Two transports are supported (select with `MCP_TRANSPORT=stdio|http`):
 
 - Pure local embedding inference (no external API calls) via `@xenova/transformers`
 - Multi‑language source + docs support (configurable via `ALLOWED_EXT`)
+- Excluded folder patterns support (configurable via `EXCLUDED_FOLDERS`)
 - Fast glob file discovery and overlapping chunking for better recall
 - Simple cosine similarity ranking (optionally swap to ANN later)
 - Pluggable model selection via `MODEL_NAME` (see guidance below)
@@ -205,6 +206,7 @@ Supported variables:
 - `REPO_ROOT` (required): path to the repository to index.
 - `TRANSFORMERS_CACHE` (optional): cache folder for model files.
 - `ALLOWED_EXT` (optional): comma-separated list of file extensions to index.
+- `EXCLUDED_FOLDERS` (optional): comma-separated list of folder patterns to exclude from indexing. Supports both exact folder names (e.g., `node_modules,dist,build,.git`) and basic glob patterns (e.g., `**/test/**,**/tests/**`). Files in these folders will be skipped during indexing. Defaults include common build/dependency folders: `node_modules`, `dist`, `build`, `.git`, `target`, `bin`, `obj`, `.cache`, `coverage`, `.nyc_output`.
 - `MCP_TRANSPORT` (optional): `http` or `stdio`.
 - `VERBOSE` (optional): true/1/yes/on for more granular progress logs during indexing & embedding.
 - `INDEX_STORE_PATH` (optional): path to a persisted JSON embedding index (e.g., `C:\repo\.mcp-index.json` or `/repo/.mcp-index.json`). Enables fast warm starts + incremental reindex (new / deleted / size‑changed files only).

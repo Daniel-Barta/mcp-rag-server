@@ -6,7 +6,8 @@
       "args": ["C:/path/to/mcp-rag-server/build/index.js"],
       "env": {
         "REPO_ROOT": "C:/path/to/your/repository",
-        "TRANSFORMERS_CACHE": "C:/path/to/cache"
+        "TRANSFORMERS_CACHE": "C:/path/to/cache",
+        "EXCLUDED_FOLDERS": "node_modules,dist,build,test,tests,.git,target,bin,obj"
       }
     }
   }
