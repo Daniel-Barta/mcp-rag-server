@@ -287,7 +287,21 @@ function createServer() {
 
       // Basic validation
       const cap = Math.min(5000, Math.max(1, limit));
-      const normalizedDir = dir === "." ? "" : dir.replace(/^\.\/?/, "");
+      // Normalize the requested directory path without stripping leading dots on real names
+      // Previous implementation used: dir.replace(/^\.\/?/, "") which incorrectly turned
+      // ".git" into "git" (same for any dot‑prefixed folder), making it impossible to list
+      // hidden folders. We only collapse a solitary "." or leading "./" now.
+      let normalizedDir: string;
+      if (dir === "." || dir === "./") {
+        normalizedDir = ""; // repository root
+      } else if (dir.startsWith("./")) {
+        normalizedDir = dir.slice(2); // drop leading ./
+      } else if (/^[\\/]/.test(dir)) {
+        // Trim a single leading slash/backslash if user provided an absolute-looking root ref
+        normalizedDir = dir.replace(/^[\\/]+/, "");
+      } else {
+        normalizedDir = dir; // keep dot‑prefixed names like .git, .vscode, etc.
+      }
       const absBase = indexer.ensureWithinRoot(normalizedDir);
       // Confirm it's a directory
       let st: any;
