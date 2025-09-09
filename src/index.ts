@@ -149,12 +149,23 @@ function createServer() {
         {
           name: "rag_query",
           description:
-            "Semantically search files under REPO_ROOT and return relevant snippets (path, snippet, score).",
+            "Semantically search files under REPO_ROOT and return relevant chunks with metadata: id, path, snippet (chunk text), score, totalLines (original file lineCount), fileSize (bytes).",
           inputSchema: {
             type: "object",
+            description: "RAG semantic search request parameters.",
             properties: {
-              query: { type: "string" },
-              top_k: { type: "number" },
+              query: {
+                type: "string",
+                description:
+                  "Natural language search query. Use concise, specific terms for best semantic matches.",
+              },
+              top_k: {
+                type: "number",
+                description:
+                  "Maximum number of matches to return (1-50). Defaults to 5 if omitted.",
+                minimum: 1,
+                maximum: 50,
+              },
             },
             required: ["query"],
           },
@@ -164,10 +175,24 @@ function createServer() {
           description: "Read a specific file (optionally a line range).",
           inputSchema: {
             type: "object",
+            description: "Read file request parameters.",
             properties: {
-              path: { type: "string" },
-              startLine: { type: "number" },
-              endLine: { type: "number" },
+              path: {
+                type: "string",
+                description: "Path to file relative to REPO_ROOT (use forward slashes).",
+              },
+              startLine: {
+                type: "number",
+                description:
+                  "1-based starting line (inclusive). If omitted, starts at beginning of file.",
+                minimum: 1,
+              },
+              endLine: {
+                type: "number",
+                description:
+                  "1-based ending line (inclusive). If omitted, reads until end of file.",
+                minimum: 1,
+              },
             },
             required: ["path"],
           },
@@ -189,6 +214,8 @@ function createServer() {
         path: r.d.path,
         score: Number(r.s.toFixed(4)),
         snippet: r.d.text,
+        totalLines: r.d.lineCount,
+        fileSize: r.d.fileSize,
       }));
       return { toolResult: { matches: top } };
     }

@@ -101,7 +101,7 @@ export class Persistence {
       const docs: Doc[] = [];
       for (const d of parsed.docs) {
         if (!d || typeof d !== "object") continue;
-        const { id, path: p, chunk, text, fileSize, emb } = d as any;
+        const { id, path: p, chunk, text, fileSize, lineCount, emb } = d as any;
         if (
           typeof id !== "string" ||
           typeof p !== "string" ||
@@ -125,7 +125,15 @@ export class Persistence {
           }
         }
         if (!arr) continue; // require embedding
-        docs.push({ id, path: p, chunk, text, fileSize, emb: arr });
+        docs.push({
+          id,
+          path: p,
+          chunk,
+          text,
+          fileSize,
+          lineCount: typeof lineCount === "number" && lineCount > 0 ? lineCount : -1,
+          emb: arr,
+        });
       }
       console.error(`[MCP] Loaded persisted index: ${docs.length} chunks.`);
       if (verbose) console.error(`[MCP][verbose] Loaded from ${storePath}`);
@@ -160,6 +168,7 @@ export class Persistence {
           chunk: d.chunk,
           text: d.text,
           fileSize: d.fileSize,
+          lineCount: d.lineCount,
           emb: d.emb
             ? Buffer.from(d.emb.buffer, d.emb.byteOffset, d.emb.byteLength).toString("base64")
             : "",

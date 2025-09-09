@@ -222,6 +222,7 @@ export class Indexer {
       try {
         const content = await fs.readFile(info.abs, "utf8");
         const chunks = Indexer.splitChunks(content, this.chunkSize, this.chunkOverlap);
+        const lineCount = content.split(/\r?\n/).length;
         chunks.forEach((chunk, idx) => {
           this.docs.push({
             id: `${idCounter++}`,
@@ -229,6 +230,7 @@ export class Indexer {
             chunk: idx,
             text: chunk,
             fileSize: info.size,
+            lineCount,
           });
         });
         processedFiles++;
@@ -420,6 +422,7 @@ export class Indexer {
       try {
         const content = await fs.readFile(file.abs, "utf8");
         const chunks = Indexer.splitChunks(content, this.chunkSize, this.chunkOverlap);
+        const lineCount = content.split(/\r?\n/).length;
         for (let idx = 0; idx < chunks.length; idx++) {
           const text = chunks[idx];
           const emb = await this.embeddings.embed(text);
@@ -429,6 +432,7 @@ export class Indexer {
             chunk: idx,
             text,
             fileSize: file.size,
+            lineCount,
             emb,
           });
           statusManager.incEmbedded();
