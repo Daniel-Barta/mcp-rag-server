@@ -321,7 +321,11 @@ function createServer() {
           const relAbs = path.join(currentAbs, d.name);
           const relToRoot = path.relative(ROOT, relAbs).split(path.sep).join("/");
           if (d.isDirectory()) {
-            out.push({ path: relToRoot + "/", type: "dir" });
+            // If an extension whitelist is active, suppress directory entries in results
+            // (still traverse them when recursion is enabled).
+            if (!extsSet) {
+              out.push({ path: relToRoot, type: "dir" });
+            }
             if (recursive) {
               const nextDepth = depth + 1;
               if (maxDepth == null || nextDepth <= maxDepth) {
