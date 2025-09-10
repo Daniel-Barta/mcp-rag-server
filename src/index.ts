@@ -92,12 +92,6 @@ interface ListFilesArgs {
   limit?: number;
 }
 
-// Configure transformers cache directory ASAP, before any model/pipeline is created.
-// Doing this early ensures downstream libraries (e.g. HuggingFace) honor the path.
-await Embeddings.configureCache().catch((e) =>
-  console.error("[MCP] Failed to set TRANSFORMERS cache directory:", e),
-);
-
 // Initialize embedding model (model name resolved internally). Errors surface
 // early rather than lazily inside the first tool invocation, improving debuggability
 // for mis‑configured model environments.
@@ -127,13 +121,18 @@ const indexer = new Indexer({
  * Tool contracts:
  *  rag_query
  *    Input:  { query: string, top_k?: number }
- *    Output: { matches: Array<{ path: string, score: number, snippet: string, totalLines: number, fileSize: number }> }
+ *    Output: Array<{ path: string, score: number, snippet: string, totalLines: number, fileSize: number }>
  *    Errors: InvalidRequest if query missing.
  *
  *  read_file
  *    Input:  { path: string, startLine?: number, endLine?: number }
  *    Output: string (entire file or requested 1‑based inclusive line range)
  *    Errors: InvalidRequest if path missing; MethodNotFound for unknown tool names.
+ *
+ *  list_files
+ *    Input:  { dir?: string, recursive?: boolean, maxDepth?: number, includeExtensions?: string[], limit?: number }
+ *    Output: Array<{ path: string, type: "file" | "dir", size?: number }>
+ *    Errors: InvalidRequest if directory doesn't exist or path invalid.
  *
  * Security considerations:
  *  - Path traversal is prevented by Indexer.ensureWithinRoot (throws if outside ROOT).
@@ -153,7 +152,7 @@ function createServer() {
       tools: [
         {
           name: "rag_query",
-          description: `Semantically search files under '${FOLDER_INFO_NAME}' folder and return relevant chunks with metadata: id, path, snippet (chunk text), score, totalLines (original file lineCount), fileSize (bytes).`,
+          description: `Semantically search files under '${FOLDER_INFO_NAME}' folder and return relevant chunks. Returns an array of match objects with properties: 'path' (string, file path), 'score' (number, similarity score 0-1), 'snippet' (string, matching text chunk), 'totalLines' (number, original file line count), 'fileSize' (number, file size in bytes). Results are sorted by relevance score descending.`,
           inputSchema: {
             type: "object",
             description: "RAG semantic search request parameters.",
@@ -176,7 +175,7 @@ function createServer() {
         },
         {
           name: "read_file",
-          description: `Read a specific file under '${FOLDER_INFO_NAME}' folder (optionally a line range).`,
+          description: `Read a specific file under '${FOLDER_INFO_NAME}' folder (optionally a line range). Returns the file content as a string. If startLine and/or endLine are specified, returns only the requested 1-based inclusive line range; otherwise returns the entire file content.`,
           inputSchema: {
             type: "object",
             description: "Read file request parameters.",
@@ -203,7 +202,7 @@ function createServer() {
         },
         {
           name: "list_files",
-          description: `List files (and subdirectories) within a directory under '${FOLDER_INFO_NAME}' folder. Supports optional recursion, depth limit, and extension filtering. Returned paths are always relative to '${FOLDER_INFO_NAME}'.`,
+          description: `List files (and subdirectories) within a directory under '${FOLDER_INFO_NAME}' folder. Supports optional recursion, depth limit, and extension filtering. Returns an array of entry objects with properties: 'path' (string, relative to '${FOLDER_INFO_NAME}'), 'type' ('file' or 'dir'), and 'size' (number, bytes, for files only). Entries are sorted alphabetically with directories first.`,
           inputSchema: {
             type: "object",
             description: "List directory contents parameters.",
@@ -259,7 +258,14 @@ function createServer() {
         totalLines: r.d.lineCount,
         fileSize: r.d.fileSize,
       }));
-      return { toolResult: { matches: top } };
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(top, null, 2),
+          },
+        ],
+      };
     }
 
     if (req.params.name === "read_file") {
@@ -271,9 +277,9 @@ function createServer() {
         const lines = content.split(/\r?\n/);
         const s = Math.max(0, (startLine ?? 1) - 1);
         const e = Math.min(lines.length, endLine ?? lines.length);
-        return { toolResult: lines.slice(s, e).join("\n") };
+        return { content: [{ type: "text", text: lines.slice(s, e).join("\n") }] };
       }
-      return { toolResult: content };
+      return { content: [{ type: "text", text: content }] };
     }
 
     if (req.params.name === "list_files") {
@@ -365,7 +371,14 @@ function createServer() {
         if (a.type !== b.type) return a.type === "dir" ? -1 : 1;
         return a.path.localeCompare(b.path);
       });
-      return { toolResult: { entries: out } };
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(out, null, 2),
+          },
+        ],
+      };
     }
 
     throw new McpError(ErrorCode.MethodNotFound, "Unknown method");
