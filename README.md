@@ -111,6 +111,15 @@ Default HTTP bind: http://127.0.0.1:3000/mcp. Override with `HOST` and `MCP_PORT
 
 `ready` flips to true only once all discovered chunks have embeddings (post cold build or incremental update completion).
 
+#### Instructions endpoint
+
+The server also exposes `GET /instructions`, which serves the Markdown file `docs/copilot-instructions.md` with all occurrences of `<FOLDER_INFO_NAME>` replaced by the `FOLDER_INFO_NAME` value from your environment (default `REPO_ROOT`).
+
+Notes:
+
+- Start the server from the repository root so `docs/copilot-instructions.md` resolves via the current working directory.
+- Response content type is `text/markdown; charset=utf-8`.
+
 ### Linting & Formatting
 
 - Run ESLint (check): `npm run lint`

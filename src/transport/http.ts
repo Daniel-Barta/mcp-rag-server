@@ -63,6 +63,8 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { statusManager } from "../status";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 /**
  * Start the streamable HTTP transport. Each distinct session (identified by
@@ -187,6 +189,21 @@ export async function startHttpTransport(createServer: () => Server) {
   app.get("/health", (_req, res) => {
     // Provide current server / embedding / indexing status (implementation in statusManager).
     res.json(statusManager.getStatus());
+  });
+
+  // Instructions endpoint: serve docs/copilot-instructions.md with placeholder substitution
+  app.get("/instructions", async (_req, res) => {
+    try {
+      // Single, stable resolution: assume server is started from repo root (process.cwd())
+      const filePath = path.resolve(process.cwd(), "docs/copilot-instructions.md");
+      const raw = await fs.readFile(filePath, "utf8");
+      const folderInfoName = (process.env.FOLDER_INFO_NAME ?? "REPO_ROOT").trim();
+      const body = raw.replaceAll(/<FOLDER_INFO_NAME>/g, folderInfoName);
+      res.type("text/markdown; charset=utf-8").send(body);
+    } catch (err) {
+      console.error("[MCP] Failed to serve /instructions:", err);
+      res.status(500).json({ error: "Unable to load instructions" });
+    }
   });
 
   await new Promise<void>((resolve) => {
