@@ -350,3 +350,130 @@ Why 800 / 120? Empirically this keeps most self‑contained code constructs (fun
 - Heavily interdependent code where context spans multiple files: keep default or modestly raise overlap (to ~160) rather than shrinking size.
 
 Rule of thumb: Overlap ≈ 15% of size. Avoid overlap >= size (auto‑corrected) and avoid extremely small sizes (<300) unless you have a downstream re‑ranking stage.
+
+## Step‑by‑step: Index a Java repo (ProjectB in IntelliJ) and use it from C# (ProjectA in Visual Studio 2022)
+
+This walkthrough shows how to index a Java project (ProjectB) and make that knowledge available to GitHub Copilot (Agent mode) while you work in a separate C# solution (ProjectA) in Visual Studio 2022.
+
+Assumptions
+
+- You’re on Windows and use PowerShell.
+- ProjectB is a Java codebase you typically open in IntelliJ IDEA (location: `C:\path\to\ProjectB`). IntelliJ does not need to be open for indexing.
+- ProjectA is a C# solution you open in Visual Studio 2022 (location: `C:\path\to\ProjectA`).
+
+### 1) Build this MCP server
+
+```powershell
+npm install
+npm run build
+```
+
+### 2) Start the server in HTTP mode pointing at ProjectB
+
+Set environment variables once in your PowerShell session, then start. The optional index store speeds up warm starts.
+
+```powershell
+$env:REPO_ROOT = "C:\path\to\ProjectB"
+$env:MCP_TRANSPORT = "http"
+$env:INDEX_STORE_PATH = "C:\path\to\ProjectB\.mcp-index.json"   # optional but recommended
+$env:ALLOWED_EXT = "java,kt,kts,md,xml,gradle,properties"           # tailor for Java projects
+# Optional: cache model files to a fast local folder
+# $env:TRANSFORMERS_CACHE = "C:\model-cache"
+
+npm start
+```
+
+Wait until the console prints “Embeddings ready.” You can also confirm readiness:
+
+- Health: http://127.0.0.1:3000/health (ready: true)
+- Tools are exposed at: http://127.0.0.1:3000/mcp (for MCP clients)
+
+Leave this window running.
+
+### 3) Point Visual Studio (ProjectA) at this server
+
+Create a `.mcp.json` next to your ProjectA solution file (or place it at `%USERPROFILE%\.mcp.json` to apply globally). Use the HTTP entry so VS doesn’t need to spawn the server.
+
+```json
+{
+  "servers": {
+    "mcp-rag-server": {
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:3000/mcp"
+    }
+  }
+}
+```
+
+Open ProjectA in Visual Studio 2022, open Copilot Chat, switch to Agent mode, and enable the "mcp-rag-server". Grant permissions if prompted.
+
+Tips
+
+- If this is your first run on a large repo, keep the MCP server window open until indexing completes before connecting from VS. Using HTTP avoids timeouts during the cold build.
+- For subsequent runs, the `INDEX_STORE_PATH` makes startup much faster.
+
+### 4) Use it from Copilot while coding in ProjectA
+
+Ask Copilot to search ProjectB before answering questions or generating code in ProjectA. Example prompts:
+
+- “Use the tool rag_query to find the Java service responsible for authentication in ProjectB; then show me the equivalent interface I should implement in C# here.”
+- “List files under src/main/java that reference ‘Invoice’ in ProjectB, then open the key file.”
+
+Behind the scenes, Copilot will call:
+
+- `rag_query` – to locate relevant snippets from ProjectB
+- `read_file` – to fetch exact code/lines
+- `list_files` – to navigate directories
+
+### 5) (Optional) Use MCP Inspector to sanity‑check
+
+If you want to test the tools before involving Visual Studio:
+
+```powershell
+# In a separate PowerShell
+$env:REPO_ROOT = "C:\path\to\ProjectB"
+$env:MCP_TRANSPORT = "http"
+npm run build
+npx @modelcontextprotocol/inspector http://127.0.0.1:3000/mcp --transport http
+```
+
+## How to use `docs/copilot-instructions.md`
+
+The file `docs/copilot-instructions.md` contains clear, copy‑pastable guidance that teaches the assistant how to leverage this MCP server effectively (when to call `rag_query`, `read_file`, `list_files`, how to quote code, etc.).
+
+There are two easy ways to use it:
+
+1. Via the server’s /instructions endpoint (best with HTTP mode)
+
+- Ensure the server is running with `MCP_TRANSPORT=http`.
+- Optionally set a friendly label for your repo in the UI:
+
+  ```powershell
+  $env:FOLDER_INFO_NAME = "ProjectB"
+  ```
+
+- Open http://127.0.0.1:3000/instructions in a browser. The page renders the instructions with `<FOLDER_INFO_NAME>` replaced (e.g., “ProjectB”).
+- Copy the content into Copilot Chat in Visual Studio and pin it for the current session/conversation to guide the assistant’s behavior.
+
+2. Sync and store in ProjectA’s .github folder (from /instructions)
+
+- Ensure the server is running with `MCP_TRANSPORT=http` and set a friendly label:
+
+  ```powershell
+  $env:FOLDER_INFO_NAME = "ProjectB"
+  ```
+
+- Create (if not exists) `C:\path\to\ProjectA\.github\`.
+- Pull the latest rendered instructions and save them to the repo:
+
+  ```powershell
+  $dest = "C:\path\to\ProjectA\.github\copilot-instructions.md"
+  Invoke-RestMethod 'http://127.0.0.1:3000/instructions' | Set-Content -Encoding UTF8 $dest
+  ```
+
+- Commit the file so your team can reuse it. Re-run the command above anytime you update the instructions in this server and want to refresh the checked-in copy.
+
+Notes
+
+- These instructions are optional but help keep Copilot disciplined: it will search before answering, cite paths, and fetch exact code lines before quoting.
+- The server’s tool descriptions also reference `FOLDER_INFO_NAME` to provide consistent, repo‑specific guidance in tool metadata.
