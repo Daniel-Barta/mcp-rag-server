@@ -149,7 +149,7 @@ export class Persistence {
     params: Omit<SaveParams, "storePath" | "verbose"> & { storePath?: string; verbose?: boolean },
   ): Promise<void> {
     const storePath = params.storePath ?? this.storePath;
-    const verbose = params.verbose ?? this.verbose ?? params.verbose;
+    const verbose = params.verbose ?? this.verbose;
     const { docs, chunkSize, chunkOverlap, modelName } = params;
     if (!storePath) return;
     try {
