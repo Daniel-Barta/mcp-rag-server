@@ -421,8 +421,10 @@ export class Indexer {
     // Re-embed changed/new files
     let idCounter = this.getMaxId() + 1;
     let embeddedChunks = 0;
+    console.error(`[MCP] Number of changed or new files: ${changed.length}`);
     for (const file of changed) {
       try {
+        console.error(`[MCP] Embedding ${file.rel}`);
         const content = await fs.readFile(file.abs, "utf8");
         const chunks = Indexer.splitChunks(content, this.chunkSize, this.chunkOverlap);
         const lineCount = content.split(/\r?\n/).length;
