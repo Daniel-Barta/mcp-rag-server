@@ -110,8 +110,8 @@ const indexer = new Indexer({
   chunkOverlap: CHUNK_OVERLAP,
   storePath: INDEX_STORE_PATH,
 });
-// Initialize PDF extractor for read_file operations
-const pdfExtractor = new PdfExtractor(INDEX_STORE_PATH, ROOT, VERBOSE);
+// Use PDF extractor from indexer
+const pdfExtractor: PdfExtractor = indexer.getPdfExtractor();
 
 /**
  * Factory to construct a new MCP Server instance with tool handlers.

@@ -146,6 +146,11 @@ export class Indexer {
     return this.built;
   }
 
+  /** Access the PDF extractor instance. */
+  public getPdfExtractor(): PdfExtractor {
+    return this.pdfExtractor;
+  }
+
   /**
    * Split arbitrary text into (roughly) fixed-size overlapping chunks. The
    * final chunk may be shorter. Overlap helps retain context continuity across
