@@ -52,7 +52,7 @@ import { Indexer } from "./indexer";
 import { startHttpTransport } from "./transport/http";
 import { startStdioTransport } from "./transport/stdio";
 import { statusManager } from "./status";
-import { getConfig, Config } from "./config";
+import { getConfig, Config, APP_VERSION } from "./config";
 import { PdfExtractor } from "./pdf-extractor";
 
 const config: Config = await getConfig();
@@ -144,7 +144,7 @@ const pdfExtractor: PdfExtractor = indexer.getPdfExtractor();
  */
 function createServer() {
   const server = new Server(
-    { name: "mcp-rag-server", version: "0.3.0" },
+    { name: "mcp-rag-server", version: APP_VERSION },
     { capabilities: { tools: {} } },
   );
 

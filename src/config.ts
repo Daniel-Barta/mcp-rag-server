@@ -3,6 +3,8 @@ import dotenv from "dotenv";
 import fsSync from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+// Import version directly from package.json (requires tsconfig "resolveJsonModule": true)
+import pkg from "../package.json" with { type: "json" };
 
 // Centralized single dotenv.config() call.
 // If executing compiled code inside build/, resolve ../.env (project root). Otherwise use default.
@@ -21,6 +23,9 @@ import { fileURLToPath } from "node:url";
   }
   dotenv.config();
 })();
+
+/** Application version sourced from package.json. */
+export const APP_VERSION: string = pkg.version;
 
 export interface Config {
   ROOT: string;
