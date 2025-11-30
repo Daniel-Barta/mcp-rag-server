@@ -1,10 +1,8 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import { env, pipeline } from "@xenova/transformers";
+import { pipeline } from "@xenova/transformers";
 
 /**
- * Encapsulates embedding model initialization, cache directory configuration
- * and helper utilities for generating embeddings + computing cosine similarity.
+ * Encapsulates embedding model initialization and helper utilities for
+ * generating embeddings + computing cosine similarity.
  * A single instance can be reused for any number of embed() calls.
  */
 export class Embeddings {
@@ -20,34 +18,6 @@ export class Embeddings {
   /** @returns Resolved (possibly defaulted) underlying model identifier. */
   public getModelName(): string {
     return this.modelName;
-  }
-
-  /**
-   * Configure the @xenova/transformers cache directory for Node.js execution.
-   * Should be invoked before {@link init} so model weights are persisted.
-   *
-   * @param cacheDir Optional explicit directory. Falls back to TRANSFORMERS_CACHE,
-   *                 then a project-local .cache/transformers folder.
-   * @returns Resolved cache directory path actually used.
-   */
-  public static async configureCache(cacheDir?: string): Promise<string> {
-    const dir =
-      cacheDir?.trim() ||
-      process.env.TRANSFORMERS_CACHE?.trim() ||
-      "" ||
-      path.resolve(process.cwd(), ".cache/transformers");
-    try {
-      await fs.mkdir(dir, { recursive: true }).catch(() => {
-        /* noop */
-      });
-    } catch {
-      // ignore
-    }
-    env.useBrowserCache = false; // ensure filesystem cache in Node
-    env.cacheDir = dir;
-    env.allowLocalModels = true;
-    console.error(`[MCP] Using TRANSFORMERS cache at: ${env.cacheDir}`);
-    return dir;
   }
 
   /** Lazily initialize the underlying embedding pipeline (idempotent). */

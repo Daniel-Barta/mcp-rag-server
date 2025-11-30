@@ -1,4 +1,4 @@
-import { Embeddings } from "./embeddings";
+import { configureTransformersCache } from "./cache";
 import dotenv from "dotenv";
 import fsSync from "node:fs";
 import path from "node:path";
@@ -42,7 +42,7 @@ export interface Config {
 export async function getConfig(): Promise<Config> {
   // Configure transformers cache directory ASAP, before any model/pipeline is created.
   // Doing this early ensures downstream libraries (e.g. HuggingFace) honor the path.
-  await Embeddings.configureCache().catch((e) =>
+  await configureTransformersCache().catch((e) =>
     console.error("[MCP] Failed to set TRANSFORMERS cache directory:", e),
   );
 
