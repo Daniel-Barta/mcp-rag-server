@@ -291,12 +291,14 @@ export class Indexer {
     statusManager.setIndexTotals(fileInfos.length, this.docs.length);
 
     for (let i = 0; i < this.docs.length; i++) {
+      const doc = this.docs[i];
+      if (!doc) continue; // Should never happen, but satisfies strict type checking
       if (i % 200 === 0) console.error(`[MCP] Embedding ${i}/${this.docs.length}`);
       if (this.verbose && i % 50 === 0) {
         const pct = ((i / Math.max(1, this.docs.length)) * 100).toFixed(1);
         console.error(`[MCP][verbose] Embedding progress: ${i}/${this.docs.length} (${pct}%)`);
       }
-      this.docs[i].emb = await this.embeddings.embed(this.docs[i].text);
+      doc.emb = await this.embeddings.embed(doc.text);
       statusManager.incEmbedded();
     }
     console.error(`[MCP] Embeddings ready.`);
@@ -432,8 +434,10 @@ export class Indexer {
     if (removed.length) {
       console.error(`[MCP] Detected removed files: ${removed.length}`);
       for (const r of removed) {
-        for (let i = this.docs.length - 1; i >= 0; i--)
-          if (this.docs[i].path === r) this.docs.splice(i, 1);
+        for (let i = this.docs.length - 1; i >= 0; i--) {
+          const doc = this.docs[i];
+          if (doc && doc.path === r) this.docs.splice(i, 1);
+        }
       }
     }
 
@@ -448,8 +452,10 @@ export class Indexer {
       const storedSize = existingDocs[0]?.fileSize;
       if (storedSize !== info.size) {
         // remove old chunks first
-        for (let i = this.docs.length - 1; i >= 0; i--)
-          if (this.docs[i].path === rel) this.docs.splice(i, 1);
+        for (let i = this.docs.length - 1; i >= 0; i--) {
+          const doc = this.docs[i];
+          if (doc && doc.path === rel) this.docs.splice(i, 1);
+        }
         changed.push({ rel, abs: info.abs, size: info.size });
       }
     }
@@ -478,6 +484,7 @@ export class Indexer {
       const lineCount = content.split(/\r?\n/).length;
       for (let idx = 0; idx < chunks.length; idx++) {
         const text = chunks[idx];
+        if (!text) continue; // Should never happen, but satisfies strict type checking
         const emb = await this.embeddings.embed(text);
         this.docs.push({
           id: `${idCounter++}`,
