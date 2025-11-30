@@ -22,13 +22,15 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",
-    "fast-glob": "^3.3.3"
+    "fast-glob": "^3.3.3",
+    "pdf-parse": "^2.4.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.35.0",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.3",
     "@types/node": "^24.3.1",
+    "@types/pdf-parse": "^1.1.5",
     "eslint": "^9.35.0",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.6.2",

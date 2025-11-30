@@ -5,7 +5,7 @@
 It indexes a target repository directory, chunks the content (default chunk size **800** chars with **120** char overlap – both configurable via `CHUNK_SIZE` / `CHUNK_OVERLAP`), builds **local embeddings** using `@xenova/transformers`, and exposes MCP tools:
 
 - `rag_query` – semantic search returning scored snippets (path, score, snippet)
-- `read_file` – secure file read (optional line range) constrained to `REPO_ROOT`
+- `read_file` – secure file read (optional line range) constrained to `REPO_ROOT`. For PDF files, text is automatically retrieved from the unified cache file if available
 - `list_files` – list directory contents (files & subdirectories) with optional recursion, depth and extension filtering
 
 Two transports are supported (select with `MCP_TRANSPORT=stdio|http`):
@@ -17,6 +17,7 @@ Two transports are supported (select with `MCP_TRANSPORT=stdio|http`):
 
 - Pure local embedding inference (no external API calls) via `@xenova/transformers`
 - Multi‑language source + docs support (configurable via `ALLOWED_EXT`)
+- **PDF support**: Automatically extracts text from PDF files during indexing and caches it in a unified `pdf-text-cache.json` file (located alongside the index store) for fast retrieval. PDF text is treated like any other text file for semantic search
 - Excluded folder patterns support (configurable via `EXCLUDED_FOLDERS`)
 - Fast glob file discovery and overlapping chunking for better recall
 - Simple cosine similarity ranking (optionally swap to ANN later)
@@ -253,7 +254,7 @@ Supported variables:
 - `REPO_ROOT` (required): path to the repository to index.
 - `FOLDER_INFO_NAME` (optional): display label used inside MCP tool descriptions for the repository root (default `REPO_ROOT`). This is purely cosmetic for client UX; it does NOT affect which directory is indexed (that is controlled only by `REPO_ROOT`). Set it if you prefer a friendlier name (e.g., `frontend-app` or `monorepo-root`) to appear in tool metadata and path guidance returned to the client.
 - `TRANSFORMERS_CACHE` (optional): cache folder for model files.
-- `ALLOWED_EXT` (optional): comma-separated list of file extensions to index.
+- `ALLOWED_EXT` (optional): comma-separated list of file extensions to index. Default includes common text/code formats plus `pdf`. PDF files are automatically processed: text is extracted once during indexing and cached in a unified `pdf-text-cache.json` file for fast retrieval.
 - `EXCLUDED_FOLDERS` (optional): comma-separated list of folder patterns to exclude from indexing. Supports both exact folder names (e.g., `node_modules,dist,build,.git`) and basic glob patterns (e.g., `**/test/**,**/tests/**`). Files in these folders will be skipped during indexing. Defaults include common build/dependency folders: `node_modules`, `dist`, `build`, `.git`, `target`, `bin`, `obj`, `.cache`, `coverage`, `.nyc_output`.
 - `MCP_TRANSPORT` (optional): `http` or `stdio`.
 - `VERBOSE` (optional): true/1/yes/on for more granular progress logs during indexing & embedding.

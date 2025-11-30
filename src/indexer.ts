@@ -6,6 +6,7 @@ import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { statusManager } from "./status";
 import { Persistence } from "./persistence";
 import { Doc } from "./types";
+import { PdfExtractor } from "./pdf-extractor";
 
 /**
  * Indexer module
@@ -102,6 +103,7 @@ export class Indexer {
   private readonly chunkOverlap: number;
   private readonly storePath?: string;
   private readonly persistence?: Persistence;
+  private readonly pdfExtractor: PdfExtractor;
   private built = false;
 
   public constructor(opts: BuildIndexOptions) {
@@ -122,6 +124,7 @@ export class Indexer {
     this.persistence =
       opts.persistence ??
       (opts.storePath ? new Persistence(opts.storePath, this.verbose) : undefined);
+    this.pdfExtractor = new PdfExtractor(this.storePath, this.root, this.verbose);
     // If fallback was applied, emit a warning (compare to originally requested value).
     if (this.chunkOverlap !== requestedOverlap && requestedOverlap >= this.chunkSize) {
       console.error(
@@ -220,7 +223,22 @@ export class Indexer {
     let processedFiles = 0;
     for (const info of fileInfos) {
       try {
-        const content = await fs.readFile(info.abs, "utf8");
+        let content: string;
+
+        // Check if file is a PDF and extract text accordingly
+        if (PdfExtractor.isPdf(info.abs)) {
+          content = await this.pdfExtractor.extractText(info.abs, info.rel, info.size);
+          if (!content) {
+            // Skip empty PDFs (extraction may have failed)
+            if (this.verbose) {
+              console.error(`[MCP][verbose] Skipping empty PDF: ${info.rel}`);
+            }
+            continue;
+          }
+        } else {
+          content = await fs.readFile(info.abs, "utf8");
+        }
+
         const chunks = Indexer.splitChunks(content, this.chunkSize, this.chunkOverlap);
         const lineCount = content.split(/\r?\n/).length;
         chunks.forEach((chunk, idx) => {
@@ -425,7 +443,21 @@ export class Indexer {
     for (const file of changed) {
       try {
         console.error(`[MCP] Embedding ${file.rel}`);
-        const content = await fs.readFile(file.abs, "utf8");
+
+        let content: string;
+        // Check if file is a PDF and extract text accordingly
+        if (PdfExtractor.isPdf(file.abs)) {
+          content = await this.pdfExtractor.extractText(file.abs, file.rel, file.size);
+          if (!content) {
+            if (this.verbose) {
+              console.error(`[MCP][verbose] Skipping empty PDF: ${file.rel}`);
+            }
+            continue;
+          }
+        } else {
+          content = await fs.readFile(file.abs, "utf8");
+        }
+
         const chunks = Indexer.splitChunks(content, this.chunkSize, this.chunkOverlap);
         const lineCount = content.split(/\r?\n/).length;
         for (let idx = 0; idx < chunks.length; idx++) {

@@ -78,6 +78,7 @@ export async function getConfig(): Promise<Config> {
     "xml",
     "proto",
     "properties",
+    "pdf",
   ];
 
   // Folder names (not globs) pruned early during directory traversal.

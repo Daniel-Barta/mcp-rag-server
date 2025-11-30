@@ -53,6 +53,7 @@ import { startHttpTransport } from "./transport/http";
 import { startStdioTransport } from "./transport/stdio";
 import { statusManager } from "./status";
 import { getConfig, Config } from "./config";
+import { PdfExtractor } from "./pdf-extractor";
 
 const config: Config = await getConfig();
 const {
@@ -109,6 +110,8 @@ const indexer = new Indexer({
   chunkOverlap: CHUNK_OVERLAP,
   storePath: INDEX_STORE_PATH,
 });
+// Initialize PDF extractor for read_file operations
+const pdfExtractor = new PdfExtractor(INDEX_STORE_PATH, ROOT, VERBOSE);
 
 /**
  * Factory to construct a new MCP Server instance with tool handlers.
@@ -272,7 +275,23 @@ function createServer() {
       const { path: rel, startLine, endLine } = (req.params.arguments ?? {}) as ReadFileArgs;
       if (!rel) throw new McpError(ErrorCode.InvalidRequest, "Missing path");
       const abs = indexer.ensureWithinRoot(rel); // throws on traversal escape attempt
-      const content = await fs.readFile(abs, "utf8");
+
+      let content: string;
+      // Check if the file is a PDF and read from cache
+      if (PdfExtractor.isPdf(abs)) {
+        const stat = await fs.stat(abs);
+        const cachedText = await pdfExtractor.getFromCache(abs, stat.size);
+        if (!cachedText) {
+          throw new McpError(
+            ErrorCode.InternalError,
+            "PDF text not available. File may not have been indexed yet.",
+          );
+        }
+        content = cachedText;
+      } else {
+        content = await fs.readFile(abs, "utf8");
+      }
+
       if (startLine != null || endLine != null) {
         const lines = content.split(/\r?\n/);
         const s = Math.max(0, (startLine ?? 1) - 1);
