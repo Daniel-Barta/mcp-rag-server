@@ -1,4 +1,12 @@
-import { pipeline } from "@xenova/transformers";
+import { pipeline, FeatureExtractionPipeline } from "@xenova/transformers";
+
+/** Error thrown when attempting to embed before initialization. */
+export class EmbedderNotInitializedError extends Error {
+  constructor() {
+    super("Embedder not initialized. Call init() first.");
+    this.name = "EmbedderNotInitializedError";
+  }
+}
 
 /**
  * Encapsulates embedding model initialization and helper utilities for
@@ -7,7 +15,7 @@ import { pipeline } from "@xenova/transformers";
  */
 export class Embeddings {
   private modelName: string;
-  private embedder: any | null = null;
+  private embedder: FeatureExtractionPipeline | null = null;
 
   public constructor(modelName?: string) {
     // Resolution precedence: explicit ctor arg > MODEL_NAME env var > default model
@@ -35,10 +43,10 @@ export class Embeddings {
    * @param text Input text (no length hard limit enforced here but extremely
    *             large inputs may be truncated by the model tokenizer).
    * @returns Normalized embedding vector.
-   * @throws Error if {@link init} has not been called.
+   * @throws {EmbedderNotInitializedError} If {@link init} has not been called.
    */
   public async embed(text: string): Promise<Float32Array> {
-    if (!this.embedder) throw new Error("Embedder not initialized. Call init() first.");
+    if (!this.embedder) throw new EmbedderNotInitializedError();
     const output = await this.embedder(text, { pooling: "mean", normalize: true });
     return output.data as Float32Array;
   }

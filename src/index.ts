@@ -42,10 +42,12 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
+  CallToolRequest,
   ErrorCode,
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
 import fs from "node:fs/promises";
+import type { Dirent } from "node:fs";
 import path from "node:path";
 import { Embeddings } from "./embeddings";
 import { Indexer } from "./indexer";
@@ -244,9 +246,11 @@ function createServer() {
   });
 
   // Tool execution router: branch on tool name. Keep logic compact; heavy work delegated.
-  server.setRequestHandler(CallToolRequestSchema, async (req: any) => {
-    if (req.params.name === "rag_query") {
-      const { query, top_k = 5 } = (req.params.arguments ?? {}) as RagQueryArgs;
+  server.setRequestHandler(CallToolRequestSchema, async (req: CallToolRequest) => {
+    const { name, arguments: args } = req.params;
+
+    if (name === "rag_query") {
+      const { query, top_k = 5 } = (args as unknown as RagQueryArgs) ?? {};
       if (!query) throw new McpError(ErrorCode.InvalidRequest, "Missing query");
 
       // Embed query once then compute cosine similarity against all chunk vectors (in‑memory scan).
@@ -271,8 +275,8 @@ function createServer() {
       };
     }
 
-    if (req.params.name === "read_file") {
-      const { path: rel, startLine, endLine } = (req.params.arguments ?? {}) as ReadFileArgs;
+    if (name === "read_file") {
+      const { path: rel, startLine, endLine } = (args as unknown as ReadFileArgs) ?? {};
       if (!rel) throw new McpError(ErrorCode.InvalidRequest, "Missing path");
       const abs = indexer.ensureWithinRoot(rel); // throws on traversal escape attempt
 
@@ -301,14 +305,14 @@ function createServer() {
       return { content: [{ type: "text", text: content }] };
     }
 
-    if (req.params.name === "list_files") {
+    if (name === "list_files") {
       const {
         dir = ".",
         recursive = false,
         maxDepth,
         includeExtensions,
         limit = 500,
-      } = (req.params.arguments ?? {}) as ListFilesArgs;
+      } = (args as unknown as ListFilesArgs) ?? {};
 
       // Basic validation
       const cap = Math.min(5000, Math.max(1, limit));
@@ -329,7 +333,7 @@ function createServer() {
       }
       const absBase = indexer.ensureWithinRoot(normalizedDir);
       // Confirm it's a directory
-      let st: any;
+      let st: Awaited<ReturnType<typeof fs.stat>>;
       try {
         st = await fs.stat(absBase);
       } catch {
@@ -346,9 +350,9 @@ function createServer() {
       type Entry = { path: string; type: "file" | "dir"; size?: number };
       const out: Entry[] = [];
 
-      async function walk(currentAbs: string, depth: number) {
+      async function walk(currentAbs: string, depth: number): Promise<void> {
         if (out.length >= cap) return; // respect limit
-        let dirents: any[];
+        let dirents: Dirent[];
         try {
           dirents = await fs.readdir(currentAbs, { withFileTypes: true });
         } catch {
