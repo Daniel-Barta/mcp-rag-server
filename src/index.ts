@@ -179,8 +179,7 @@ function createServer() {
               },
               top_k: {
                 type: "number",
-                description:
-                  `Maximum number of matches to return (1-${RAG_QUERY_MAX_RESULTS}). Defaults to ${RAG_QUERY_DEFAULT_K} if omitted.`,
+                description: `Maximum number of matches to return (1-${RAG_QUERY_MAX_RESULTS}). Defaults to ${RAG_QUERY_DEFAULT_K} if omitted.`,
                 minimum: 1,
                 maximum: RAG_QUERY_MAX_RESULTS,
               },
@@ -244,8 +243,7 @@ function createServer() {
               },
               limit: {
                 type: "number",
-                description:
-                  `Maximum number of entries to return (files + dirs). Default ${LIST_FILES_DEFAULT_LIMIT}; hard cap ${LIST_FILES_MAX_LIMIT}.`,
+                description: `Maximum number of entries to return (files + dirs). Default ${LIST_FILES_DEFAULT_LIMIT}; hard cap ${LIST_FILES_MAX_LIMIT}.`,
                 minimum: 1,
               },
             },
@@ -291,10 +289,10 @@ function createServer() {
       const abs = indexer.ensureWithinRoot(rel); // throws on traversal escape attempt
 
       let content: string;
-      // Check if the file is a PDF and read from cache
+      // Check if the file is a PDF and read from cache (using relative path as cache key)
       if (PdfExtractor.isPdf(abs)) {
         const stat = await fs.stat(abs);
-        const cachedText = await pdfExtractor.getFromCache(abs, stat.size);
+        const cachedText = await pdfExtractor.getFromCache(rel, stat.size);
         if (!cachedText) {
           throw new McpError(
             ErrorCode.InternalError,

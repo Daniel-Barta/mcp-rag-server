@@ -12,8 +12,7 @@
  *   {
  *     "version": 1,
  *     "entries": {
- *       "/absolute/path/to/file.pdf": {
- *         "pdfPath": "relative/path/to/file.pdf",
+ *       "relative/path/to/file.pdf": {
  *         "pdfSize": 12345,                    // file size in bytes
  *         "extractedAt": "2024-01-01T00:00:00Z",
  *         "text": "extracted text content...",
@@ -37,7 +36,6 @@ import { PDFParse } from "pdf-parse";
  * Metadata stored in the JSON cache alongside extracted text.
  */
 export interface PdfCacheEntry {
-  pdfPath: string;
   pdfSize: number;
   extractedAt: string;
   text: string;
@@ -107,17 +105,17 @@ export class PdfExtractor {
 
   /**
    * Check if cached text exists and is valid for the given PDF.
-   * @param pdfAbsPath Absolute path to the PDF file
+   * @param pdfRelPath Relative path to the PDF file (used as cache key)
    * @param pdfSize Current size of the PDF file (for invalidation check)
    * @returns Cached entry if valid, null otherwise
    */
-  private async getCachedText(pdfAbsPath: string, pdfSize: number): Promise<PdfCacheEntry | null> {
+  private async getCachedText(pdfRelPath: string, pdfSize: number): Promise<PdfCacheEntry | null> {
     await this.loadCacheStore();
 
-    const entry = this.cacheStore!.entries[pdfAbsPath];
+    const entry = this.cacheStore!.entries[pdfRelPath];
     if (!entry) {
       if (this.verbose) {
-        console.error(`[PDF] Cache miss for ${path.basename(pdfAbsPath)}`);
+        console.error(`[PDF] Cache miss for ${pdfRelPath}`);
       }
       return null;
     }
@@ -125,12 +123,12 @@ export class PdfExtractor {
     // Validate cache: size must match (simple change detection heuristic)
     if (entry.pdfSize === pdfSize && entry.text) {
       if (this.verbose) {
-        console.error(`[PDF] Cache hit for ${path.basename(pdfAbsPath)}`);
+        console.error(`[PDF] Cache hit for ${pdfRelPath}`);
       }
       return entry;
     } else {
       if (this.verbose) {
-        console.error(`[PDF] Cache stale for ${path.basename(pdfAbsPath)} (size mismatch)`);
+        console.error(`[PDF] Cache stale for ${pdfRelPath} (size mismatch)`);
       }
       return null;
     }
@@ -138,24 +136,24 @@ export class PdfExtractor {
 
   /**
    * Save extracted text to cache.
-   * @param pdfAbsPath Absolute path to the PDF file
+   * @param pdfRelPath Relative path to the PDF file (used as cache key)
    * @param entry Cache entry to save
    */
-  private async saveCachedText(pdfAbsPath: string, entry: PdfCacheEntry): Promise<void> {
+  private async saveCachedText(pdfRelPath: string, entry: PdfCacheEntry): Promise<void> {
     await this.loadCacheStore();
 
-    this.cacheStore!.entries[pdfAbsPath] = entry;
+    this.cacheStore!.entries[pdfRelPath] = entry;
     await this.saveCacheStore();
 
     if (this.verbose) {
-      console.error(`[PDF] Cached text for ${path.basename(pdfAbsPath)}`);
+      console.error(`[PDF] Cached text for ${pdfRelPath}`);
     }
   }
 
   /**
    * Extract text from a PDF file, using cache if available.
-   * @param pdfAbsPath Absolute path to the PDF file
-   * @param pdfRelPath Relative path (for cache metadata)
+   * @param pdfAbsPath Absolute path to the PDF file (used for reading the file)
+   * @param pdfRelPath Relative path to the PDF file (used as cache key)
    * @param pdfSize File size in bytes
    * @returns Extracted text content
    */
@@ -164,15 +162,15 @@ export class PdfExtractor {
     pdfRelPath: string,
     pdfSize: number,
   ): Promise<string> {
-    // Check cache first
-    const cached = await this.getCachedText(pdfAbsPath, pdfSize);
+    // Check cache first (using relative path as key)
+    const cached = await this.getCachedText(pdfRelPath, pdfSize);
     if (cached) {
       return cached.text;
     }
 
     // Extract text from PDF
     if (this.verbose) {
-      console.error(`[PDF] Extracting text from ${path.basename(pdfAbsPath)}...`);
+      console.error(`[PDF] Extracting text from ${pdfRelPath}...`);
     }
     try {
       const dataBuffer = await fs.readFile(pdfAbsPath);
@@ -183,15 +181,14 @@ export class PdfExtractor {
       const extractedText = textResult.text || "";
       const pageCount = textResult.pages.length;
 
-      // Save to cache
+      // Save to cache (using relative path as key)
       const entry: PdfCacheEntry = {
-        pdfPath: pdfRelPath,
         pdfSize,
         extractedAt: new Date().toISOString(),
         text: extractedText,
         pageCount,
       };
-      await this.saveCachedText(pdfAbsPath, entry);
+      await this.saveCachedText(pdfRelPath, entry);
 
       return extractedText;
     } catch (e) {
@@ -203,13 +200,13 @@ export class PdfExtractor {
 
   /**
    * Get cached text for a PDF if available, without extraction.
-   * Used by read_file to retrieve text from cache.
-   * @param pdfAbsPath Absolute path to the PDF file
+   * Used by read_file to retrieve text from cache (expects relative path same as other text files).
+   * @param pdfRelPath Relative path to the PDF file (used as cache key)
    * @param pdfSize Current file size (for validation)
    * @returns Cached text if valid, null otherwise
    */
-  public async getFromCache(pdfAbsPath: string, pdfSize: number): Promise<string | null> {
-    const cached = await this.getCachedText(pdfAbsPath, pdfSize);
+  public async getFromCache(pdfRelPath: string, pdfSize: number): Promise<string | null> {
+    const cached = await this.getCachedText(pdfRelPath, pdfSize);
     return cached ? cached.text : null;
   }
 

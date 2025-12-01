@@ -11,7 +11,6 @@ The MCP RAG server now supports indexing and retrieving text from PDF files alon
 1. When a PDF file is discovered during indexing, the server automatically extracts text using the `pdf-parse` library
 2. Extracted text is cached in a unified cache file at the repository root
 3. The cache file is stored as JSON with metadata including:
-   - Original PDF path
    - File size (for cache invalidation)
    - Extraction timestamp
    - Extracted text content
@@ -39,15 +38,13 @@ Cache file format:
 {
   "version": 1,
   "entries": {
-    "/absolute/path/to/docs/manual.pdf": {
-      "pdfPath": "docs/manual.pdf",
+    "docs/manual.pdf": {
       "pdfSize": 12345,
       "extractedAt": "2024-01-01T00:00:00.000Z",
       "text": "Extracted text content...",
       "pageCount": 10
     },
-    "/absolute/path/to/other/guide.pdf": {
-      "pdfPath": "other/guide.pdf",
+    "other/guide.pdf": {
       "pdfSize": 67890,
       "extractedAt": "2024-01-02T00:00:00.000Z",
       "text": "Another PDF's text...",
@@ -57,7 +54,7 @@ Cache file format:
 }
 ```
 
-The cache uses absolute paths as keys to ensure uniqueness across the repository.
+The cache uses relative paths as keys, consistent with how other files are referenced in the server.
 
 ## Configuration
 

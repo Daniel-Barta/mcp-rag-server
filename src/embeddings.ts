@@ -33,8 +33,7 @@ export class Embeddings {
 
   public constructor(modelName?: string) {
     // Resolution precedence: explicit ctor arg > MODEL_NAME env var > default model
-    this.modelName =
-      modelName?.trim() || process.env.MODEL_NAME?.trim() || DEFAULT_EMBEDDING_MODEL;
+    this.modelName = modelName?.trim() || process.env.MODEL_NAME?.trim() || DEFAULT_EMBEDDING_MODEL;
   }
 
   /** @returns Resolved (possibly defaulted) underlying model identifier. */
