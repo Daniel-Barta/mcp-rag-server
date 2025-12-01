@@ -1,3 +1,5 @@
+import { APP_VERSION } from "./config";
+
 /**
  * Aggregated counters for indexing / embedding pipeline progress.
  * All values are monotonic, non‑negative integers updated in-place.
@@ -46,7 +48,7 @@ export class StatusManager {
 
   public constructor(initial?: Partial<ServerStatus>) {
     this.data = {
-      version: initial?.version ?? "0.3.0",
+      version: initial?.version ?? APP_VERSION,
       repoRoot: initial?.repoRoot ?? "",
       modelName: initial?.modelName ?? "",
       transport: initial?.transport ?? "unknown",

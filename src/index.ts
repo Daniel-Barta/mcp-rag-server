@@ -42,17 +42,30 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
+  CallToolRequest,
   ErrorCode,
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
 import fs from "node:fs/promises";
+import type { Dirent } from "node:fs";
 import path from "node:path";
 import { Embeddings } from "./embeddings";
 import { Indexer } from "./indexer";
 import { startHttpTransport } from "./transport/http";
 import { startStdioTransport } from "./transport/stdio";
 import { statusManager } from "./status";
-import { getConfig, Config } from "./config";
+import { getConfig, Config, APP_VERSION } from "./config";
+import { PdfExtractor } from "./pdf-extractor";
+
+// Query and listing limits
+/** Maximum number of results for rag_query tool. */
+const RAG_QUERY_MAX_RESULTS = 50;
+/** Default number of results for rag_query if not specified. */
+const RAG_QUERY_DEFAULT_K = 5;
+/** Default limit for list_files tool. */
+const LIST_FILES_DEFAULT_LIMIT = 500;
+/** Hard cap for list_files tool limit. */
+const LIST_FILES_MAX_LIMIT = 5000;
 
 const config: Config = await getConfig();
 const {
@@ -109,6 +122,8 @@ const indexer = new Indexer({
   chunkOverlap: CHUNK_OVERLAP,
   storePath: INDEX_STORE_PATH,
 });
+// Use PDF extractor from indexer
+const pdfExtractor: PdfExtractor = indexer.getPdfExtractor();
 
 /**
  * Factory to construct a new MCP Server instance with tool handlers.
@@ -141,7 +156,7 @@ const indexer = new Indexer({
  */
 function createServer() {
   const server = new Server(
-    { name: "mcp-rag-server", version: "0.3.0" },
+    { name: "mcp-rag-server", version: APP_VERSION },
     { capabilities: { tools: {} } },
   );
 
@@ -164,10 +179,9 @@ function createServer() {
               },
               top_k: {
                 type: "number",
-                description:
-                  "Maximum number of matches to return (1-50). Defaults to 5 if omitted.",
+                description: `Maximum number of matches to return (1-${RAG_QUERY_MAX_RESULTS}). Defaults to ${RAG_QUERY_DEFAULT_K} if omitted.`,
                 minimum: 1,
-                maximum: 50,
+                maximum: RAG_QUERY_MAX_RESULTS,
               },
             },
             required: ["query"],
@@ -229,8 +243,7 @@ function createServer() {
               },
               limit: {
                 type: "number",
-                description:
-                  "Maximum number of entries to return (files + dirs). Default 500; hard cap 5000.",
+                description: `Maximum number of entries to return (files + dirs). Default ${LIST_FILES_DEFAULT_LIMIT}; hard cap ${LIST_FILES_MAX_LIMIT}.`,
                 minimum: 1,
               },
             },
@@ -241,9 +254,11 @@ function createServer() {
   });
 
   // Tool execution router: branch on tool name. Keep logic compact; heavy work delegated.
-  server.setRequestHandler(CallToolRequestSchema, async (req: any) => {
-    if (req.params.name === "rag_query") {
-      const { query, top_k = 5 } = (req.params.arguments ?? {}) as RagQueryArgs;
+  server.setRequestHandler(CallToolRequestSchema, async (req: CallToolRequest) => {
+    const { name, arguments: args } = req.params;
+
+    if (name === "rag_query") {
+      const { query, top_k = RAG_QUERY_DEFAULT_K } = (args as unknown as RagQueryArgs) ?? {};
       if (!query) throw new McpError(ErrorCode.InvalidRequest, "Missing query");
 
       // Embed query once then compute cosine similarity against all chunk vectors (in‑memory scan).
@@ -251,7 +266,7 @@ function createServer() {
       const qEmb = await embeddings.embed(String(query));
       const scored = indexer.getDocs().map((d) => ({ d, s: Embeddings.cosine(d.emb!, qEmb) }));
       scored.sort((a, b) => b.s - a.s); // descending score
-      const top = scored.slice(0, Math.max(1, Math.min(50, top_k))).map((r) => ({
+      const top = scored.slice(0, Math.max(1, Math.min(RAG_QUERY_MAX_RESULTS, top_k))).map((r) => ({
         path: r.d.path,
         score: Number(r.s.toFixed(4)),
         snippet: r.d.text,
@@ -268,11 +283,27 @@ function createServer() {
       };
     }
 
-    if (req.params.name === "read_file") {
-      const { path: rel, startLine, endLine } = (req.params.arguments ?? {}) as ReadFileArgs;
+    if (name === "read_file") {
+      const { path: rel, startLine, endLine } = (args as unknown as ReadFileArgs) ?? {};
       if (!rel) throw new McpError(ErrorCode.InvalidRequest, "Missing path");
       const abs = indexer.ensureWithinRoot(rel); // throws on traversal escape attempt
-      const content = await fs.readFile(abs, "utf8");
+
+      let content: string;
+      // Check if the file is a PDF and read from cache (using relative path as cache key)
+      if (PdfExtractor.isPdf(abs)) {
+        const stat = await fs.stat(abs);
+        const cachedText = await pdfExtractor.getFromCache(rel, stat.size);
+        if (!cachedText) {
+          throw new McpError(
+            ErrorCode.InternalError,
+            "PDF text not available. File may not have been indexed yet.",
+          );
+        }
+        content = cachedText;
+      } else {
+        content = await fs.readFile(abs, "utf8");
+      }
+
       if (startLine != null || endLine != null) {
         const lines = content.split(/\r?\n/);
         const s = Math.max(0, (startLine ?? 1) - 1);
@@ -282,17 +313,17 @@ function createServer() {
       return { content: [{ type: "text", text: content }] };
     }
 
-    if (req.params.name === "list_files") {
+    if (name === "list_files") {
       const {
         dir = ".",
         recursive = false,
         maxDepth,
         includeExtensions,
-        limit = 500,
-      } = (req.params.arguments ?? {}) as ListFilesArgs;
+        limit = LIST_FILES_DEFAULT_LIMIT,
+      } = (args as unknown as ListFilesArgs) ?? {};
 
       // Basic validation
-      const cap = Math.min(5000, Math.max(1, limit));
+      const cap = Math.min(LIST_FILES_MAX_LIMIT, Math.max(1, limit));
       // Normalize the requested directory path without stripping leading dots on real names
       // Previous implementation used: dir.replace(/^\.\/?/, "") which incorrectly turned
       // ".git" into "git" (same for any dot‑prefixed folder), making it impossible to list
@@ -310,7 +341,7 @@ function createServer() {
       }
       const absBase = indexer.ensureWithinRoot(normalizedDir);
       // Confirm it's a directory
-      let st: any;
+      let st: Awaited<ReturnType<typeof fs.stat>>;
       try {
         st = await fs.stat(absBase);
       } catch {
@@ -327,9 +358,9 @@ function createServer() {
       type Entry = { path: string; type: "file" | "dir"; size?: number };
       const out: Entry[] = [];
 
-      async function walk(currentAbs: string, depth: number) {
+      async function walk(currentAbs: string, depth: number): Promise<void> {
         if (out.length >= cap) return; // respect limit
-        let dirents: any[];
+        let dirents: Dirent[];
         try {
           dirents = await fs.readdir(currentAbs, { withFileTypes: true });
         } catch {

@@ -1,8 +1,10 @@
-import { Embeddings } from "./embeddings";
+import { configureTransformersCache } from "./cache";
 import dotenv from "dotenv";
 import fsSync from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+// Import version directly from package.json (requires tsconfig "resolveJsonModule": true)
+import pkg from "../package.json" with { type: "json" };
 
 // Centralized single dotenv.config() call.
 // If executing compiled code inside build/, resolve ../.env (project root). Otherwise use default.
@@ -22,6 +24,9 @@ import { fileURLToPath } from "node:url";
   dotenv.config();
 })();
 
+/** Application version sourced from package.json. */
+export const APP_VERSION: string = pkg.version;
+
 export interface Config {
   ROOT: string;
   ALLOWED_EXT: string[];
@@ -37,7 +42,7 @@ export interface Config {
 export async function getConfig(): Promise<Config> {
   // Configure transformers cache directory ASAP, before any model/pipeline is created.
   // Doing this early ensures downstream libraries (e.g. HuggingFace) honor the path.
-  await Embeddings.configureCache().catch((e) =>
+  await configureTransformersCache().catch((e) =>
     console.error("[MCP] Failed to set TRANSFORMERS cache directory:", e),
   );
 
@@ -78,6 +83,7 @@ export async function getConfig(): Promise<Config> {
     "xml",
     "proto",
     "properties",
+    "pdf",
   ];
 
   // Folder names (not globs) pruned early during directory traversal.

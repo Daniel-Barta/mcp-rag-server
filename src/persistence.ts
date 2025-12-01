@@ -117,8 +117,11 @@ export class Persistence {
           try {
             const buf = Buffer.from(emb, "base64");
             if (buf.byteLength % 4 === 0) {
-              arr = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
-              arr = new Float32Array(arr); // copy
+              // Create a view into the buffer, then copy to detach from the underlying
+              // Buffer memory. Without copying, the Float32Array would share memory with
+              // the Buffer which can lead to unexpected behavior if the Buffer is reused.
+              const view = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
+              arr = new Float32Array(view);
             }
           } catch {
             /* ignore */

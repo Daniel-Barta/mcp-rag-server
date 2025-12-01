@@ -6,6 +6,7 @@ import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { statusManager } from "./status";
 import { Persistence } from "./persistence";
 import { Doc } from "./types";
+import { PdfExtractor } from "./pdf-extractor";
 
 /**
  * Indexer module
@@ -102,6 +103,7 @@ export class Indexer {
   private readonly chunkOverlap: number;
   private readonly storePath?: string;
   private readonly persistence?: Persistence;
+  private readonly pdfExtractor: PdfExtractor;
   private built = false;
 
   public constructor(opts: BuildIndexOptions) {
@@ -122,6 +124,7 @@ export class Indexer {
     this.persistence =
       opts.persistence ??
       (opts.storePath ? new Persistence(opts.storePath, this.verbose) : undefined);
+    this.pdfExtractor = new PdfExtractor(this.storePath, this.root, this.verbose);
     // If fallback was applied, emit a warning (compare to originally requested value).
     if (this.chunkOverlap !== requestedOverlap && requestedOverlap >= this.chunkSize) {
       console.error(
@@ -141,6 +144,47 @@ export class Indexer {
   /** Whether {@link build} has completed successfully. */
   public isReady(): boolean {
     return this.built;
+  }
+
+  /** Access the PDF extractor instance. */
+  public getPdfExtractor(): PdfExtractor {
+    return this.pdfExtractor;
+  }
+
+  /**
+   * Read file content, handling both regular text files and PDFs.
+   * For PDFs, extracts text via the PDF extractor (with caching).
+   * For other files, reads as UTF-8 text.
+   *
+   * @param absPath Absolute path to the file.
+   * @param relPath Relative path (used for PDF cache metadata).
+   * @param fileSize File size in bytes (used for PDF cache validation).
+   * @returns File content as string, or null if the file could not be read
+   *          (e.g., empty PDF, extraction failure, or unreadable file).
+   */
+  private async readFileContent(
+    absPath: string,
+    relPath: string,
+    fileSize: number,
+  ): Promise<string | null> {
+    try {
+      if (PdfExtractor.isPdf(absPath)) {
+        const content = await this.pdfExtractor.extractText(absPath, relPath, fileSize);
+        if (!content) {
+          if (this.verbose) {
+            console.error(`[MCP][verbose] Skipping empty PDF: ${relPath}`);
+          }
+          return null;
+        }
+        return content;
+      }
+      return await fs.readFile(absPath, "utf8");
+    } catch (e) {
+      if (this.verbose) {
+        console.error(`[MCP][verbose] Failed to read file ${relPath}:`, e);
+      }
+      return null;
+    }
   }
 
   /**
@@ -219,26 +263,26 @@ export class Indexer {
     let idCounter = 0;
     let processedFiles = 0;
     for (const info of fileInfos) {
-      try {
-        const content = await fs.readFile(info.abs, "utf8");
-        const chunks = Indexer.splitChunks(content, this.chunkSize, this.chunkOverlap);
-        const lineCount = content.split(/\r?\n/).length;
-        chunks.forEach((chunk, idx) => {
-          this.docs.push({
-            id: `${idCounter++}`,
-            path: info.rel,
-            chunk: idx,
-            text: chunk,
-            fileSize: info.size,
-            lineCount,
-          });
+      const content = await this.readFileContent(info.abs, info.rel, info.size);
+      if (content === null) {
+        continue; // Skip unreadable or empty files
+      }
+
+      const chunks = Indexer.splitChunks(content, this.chunkSize, this.chunkOverlap);
+      const lineCount = content.split(/\r?\n/).length;
+      chunks.forEach((chunk, idx) => {
+        this.docs.push({
+          id: `${idCounter++}`,
+          path: info.rel,
+          chunk: idx,
+          text: chunk,
+          fileSize: info.size,
+          lineCount,
         });
-        processedFiles++;
-        if (this.verbose && processedFiles % 100 === 0) {
-          console.error(`[MCP][verbose] Processed ${processedFiles}/${fileInfos.length} files`);
-        }
-      } catch {
-        /* ignore unreadable files */
+      });
+      processedFiles++;
+      if (this.verbose && processedFiles % 100 === 0) {
+        console.error(`[MCP][verbose] Processed ${processedFiles}/${fileInfos.length} files`);
       }
     }
     console.error(
@@ -247,12 +291,14 @@ export class Indexer {
     statusManager.setIndexTotals(fileInfos.length, this.docs.length);
 
     for (let i = 0; i < this.docs.length; i++) {
+      const doc = this.docs[i];
+      if (!doc) continue; // Should never happen, but satisfies strict type checking
       if (i % 200 === 0) console.error(`[MCP] Embedding ${i}/${this.docs.length}`);
       if (this.verbose && i % 50 === 0) {
         const pct = ((i / Math.max(1, this.docs.length)) * 100).toFixed(1);
         console.error(`[MCP][verbose] Embedding progress: ${i}/${this.docs.length} (${pct}%)`);
       }
-      this.docs[i].emb = await this.embeddings.embed(this.docs[i].text);
+      doc.emb = await this.embeddings.embed(doc.text);
       statusManager.incEmbedded();
     }
     console.error(`[MCP] Embeddings ready.`);
@@ -388,8 +434,10 @@ export class Indexer {
     if (removed.length) {
       console.error(`[MCP] Detected removed files: ${removed.length}`);
       for (const r of removed) {
-        for (let i = this.docs.length - 1; i >= 0; i--)
-          if (this.docs[i].path === r) this.docs.splice(i, 1);
+        for (let i = this.docs.length - 1; i >= 0; i--) {
+          const doc = this.docs[i];
+          if (doc && doc.path === r) this.docs.splice(i, 1);
+        }
       }
     }
 
@@ -404,8 +452,10 @@ export class Indexer {
       const storedSize = existingDocs[0]?.fileSize;
       if (storedSize !== info.size) {
         // remove old chunks first
-        for (let i = this.docs.length - 1; i >= 0; i--)
-          if (this.docs[i].path === rel) this.docs.splice(i, 1);
+        for (let i = this.docs.length - 1; i >= 0; i--) {
+          const doc = this.docs[i];
+          if (doc && doc.path === rel) this.docs.splice(i, 1);
+        }
         changed.push({ rel, abs: info.abs, size: info.size });
       }
     }
@@ -423,28 +473,30 @@ export class Indexer {
     let embeddedChunks = 0;
     console.error(`[MCP] Number of changed or new files: ${changed.length}`);
     for (const file of changed) {
-      try {
-        console.error(`[MCP] Embedding ${file.rel}`);
-        const content = await fs.readFile(file.abs, "utf8");
-        const chunks = Indexer.splitChunks(content, this.chunkSize, this.chunkOverlap);
-        const lineCount = content.split(/\r?\n/).length;
-        for (let idx = 0; idx < chunks.length; idx++) {
-          const text = chunks[idx];
-          const emb = await this.embeddings.embed(text);
-          this.docs.push({
-            id: `${idCounter++}`,
-            path: file.rel,
-            chunk: idx,
-            text,
-            fileSize: file.size,
-            lineCount,
-            emb,
-          });
-          statusManager.incEmbedded();
-          embeddedChunks++;
-        }
-      } catch (e) {
-        console.error(`[MCP] Failed to re-index file ${file.rel}:`, e);
+      console.error(`[MCP] Embedding ${file.rel}`);
+
+      const content = await this.readFileContent(file.abs, file.rel, file.size);
+      if (content === null) {
+        continue; // Skip unreadable or empty files
+      }
+
+      const chunks = Indexer.splitChunks(content, this.chunkSize, this.chunkOverlap);
+      const lineCount = content.split(/\r?\n/).length;
+      for (let idx = 0; idx < chunks.length; idx++) {
+        const text = chunks[idx];
+        if (!text) continue; // Should never happen, but satisfies strict type checking
+        const emb = await this.embeddings.embed(text);
+        this.docs.push({
+          id: `${idCounter++}`,
+          path: file.rel,
+          chunk: idx,
+          text,
+          fileSize: file.size,
+          lineCount,
+          emb,
+        });
+        statusManager.incEmbedded();
+        embeddedChunks++;
       }
     }
     statusManager.setIndexTotals(currentMap.size, this.docs.length);
