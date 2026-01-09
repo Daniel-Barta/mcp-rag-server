@@ -371,6 +371,7 @@ export class Indexer {
       try {
         const st = await fs.stat(abs);
         if (!st.isFile()) continue;
+        if (st.size === 0) continue; // skip empty files
         const rel = path.relative(this.root, abs);
         infos.push({ rel, abs, size: st.size });
       } catch {
