@@ -61,7 +61,7 @@ export class Embeddings {
    */
   public async embed(text: string): Promise<Float32Array> {
     if (!this.embedder) throw new EmbedderNotInitializedError();
-    const trimmed = text.trim();    
+    const trimmed = text.trim();
     const output = await this.embedder(trimmed, { pooling: "mean", normalize: true });
     return output.data as Float32Array;
   }
