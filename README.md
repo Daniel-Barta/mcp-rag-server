@@ -312,14 +312,13 @@ For Streamable HTTP, use a config entry like:
 {
 	"servers": {
 		"mcp-rag-server": {
-			"type": "streamable-http",
 			"url": "http://127.0.0.1:3000/mcp"
 		}
 	}
 }
 ```
 
-Open VS -> Copilot Chat -> switch to Agent mode -> enable the "mcp-rag-server" and its tools (you will be asked to grant permission on first use). If using HTTP transport, ensure the config entry uses `"type": "streamable-http"` and the server has finished indexing (check `/health`).
+Open VS -> Copilot Chat -> switch to Agent mode -> enable the "mcp-rag-server" and its tools (you will be asked to grant permission on first use). If using HTTP transport, ensure the server has finished indexing (check `/health`).
 
 ## Usage in Agent mode
 
@@ -399,7 +398,6 @@ Create a `.mcp.json` next to your ProjectA solution file (or place it at `%USERP
 {
   "servers": {
     "mcp-rag-server": {
-      "type": "streamable-http",
       "url": "http://127.0.0.1:3000/mcp"
     }
   }

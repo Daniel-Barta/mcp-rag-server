@@ -10,7 +10,7 @@
  *    in‑memory semantic index (optionally persisted if INDEX_STORE_PATH set).
  * 6. Start a Model Context Protocol (MCP) server over either:
  *      - STDIO (default): good for local editor integration.
- *      - Streamable HTTP (MCP_TRANSPORT=http|streamable-http): enables polling
+ *      - Streamable HTTP (MCP_TRANSPORT=http): enables polling
  *        /health for readiness & status.
  *
  * Exposed tools:
@@ -31,7 +31,7 @@
  *  - CHUNK_OVERLAP        Overlap characters between adjacent chunks (default 120).
  *  - FOLDER_INFO_NAME     Display name used in tool descriptions (default 'REPO_ROOT').
  *  - INDEX_STORE_PATH     If set, path to persist / reload serialized index artifacts.
- *  - MCP_TRANSPORT        'stdio' (default) or 'http'/'streamable-http'.
+ *  - MCP_TRANSPORT        'stdio' (default) or 'http'.
  *  - TRANSFORMERS_CACHE   Directory for model downloads (set by Embeddings.configureCache()).
  *
  * NOTE: This file intentionally keeps business logic thin; heavy lifting is delegated
@@ -431,7 +431,7 @@ await indexer.build();
 // HTTP mode enables readiness probing & potential horizontal scaling (each process
 // maintaining its own in‑memory index) behind a load balancer.
 const transportEnv = MCP_TRANSPORT;
-const useHttp = transportEnv === "http" || transportEnv === "streamable-http";
+const useHttp = transportEnv === "http";
 
 if (useHttp) {
   statusManager.markTransport("http");

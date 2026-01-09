@@ -132,7 +132,7 @@ export async function getConfig(): Promise<Config> {
   // Optional path to persist / reload serialized index artifacts.
   const INDEX_STORE_PATH = process.env.INDEX_STORE_PATH?.trim() || undefined;
 
-  // Transport mode: 'stdio' (default) or 'http'/'streamable-http'.
+  // Transport mode: 'stdio' (default) or 'http'.
   const MCP_TRANSPORT = (process.env.MCP_TRANSPORT ?? "").trim().toLowerCase();
 
   return {
