@@ -2,7 +2,7 @@
 
 `mcp-rag-server` is a lightweight, zero‑network (after model download) Retrieval‑Augmented Generation helper you can plug into **any client that speaks the [Model Context Protocol (MCP)]**. GitHub Copilot Agent mode in Visual Studio / VS Code is just one option – you can also use the official MCP Inspector, future MCP‑aware IDEs, or custom tooling.
 
-It indexes a target repository directory, chunks the content (default chunk size **800** chars with **120** char overlap – both configurable via `CHUNK_SIZE` / `CHUNK_OVERLAP`), builds **local embeddings** using `@xenova/transformers`, and exposes MCP tools:
+It indexes a target repository directory, chunks the content (default chunk size **800** chars with **120** char overlap – both configurable via `CHUNK_SIZE` / `CHUNK_OVERLAP`), builds **local embeddings** using `@huggingface/transformers`, and exposes MCP tools:
 
 - `rag_query` – semantic search returning scored snippets (path, score, snippet)
 - `read_file` – secure file read (optional line range) constrained to `REPO_ROOT`. For PDF files, text is automatically retrieved from the unified cache file if available
@@ -15,7 +15,7 @@ Two transports are supported (select with `MCP_TRANSPORT=stdio|http`):
 
 ## Features
 
-- Pure local embedding inference (no external API calls) via `@xenova/transformers`
+- Pure local embedding inference (no external API calls) via `@huggingface/transformers`
 - Multi‑language source + docs support (configurable via `ALLOWED_EXT`)
 - **PDF support**: Automatically extracts text from PDF files during indexing and caches it in a unified `pdf-text-cache.json` file (located alongside the index store) for fast retrieval. PDF text is treated like any other text file for semantic search
 - Excluded folder patterns support (configurable via `EXCLUDED_FOLDERS`)
@@ -263,7 +263,7 @@ Supported variables:
   - `MODEL_NAME=jinaai/jina-embeddings-v2-base-code` (default) — Balanced multilingual/code embedding model; strong for mixed natural language + source code semantic search.
   - `MODEL_NAME=Xenova/bge-base-en-v1.5` — High-quality English general-purpose text embeddings (good for documentation/wiki style corpora).
   - `MODEL_NAME=Xenova/bge-small-en-v1.5` — Faster/lighter English model when latency or memory matters more than a few points of recall.
-    Any compatible sentence / feature-extraction model supported by `@xenova/transformers` should work.
+    Any compatible sentence / feature-extraction model supported by `@huggingface/transformers` should work.
 - `HOST` (optional, HTTP mode): bind host (default `127.0.0.1`).
 - `MCP_PORT` (optional, HTTP mode): TCP port (default `3000`).
 - `ENABLE_DNS_REBINDING_PROTECTION` (optional, HTTP mode): defaults to `true`; set to `false` to disable host allow‑list checks.

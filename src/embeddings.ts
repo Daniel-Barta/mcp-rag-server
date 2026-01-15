@@ -1,4 +1,4 @@
-import { pipeline, FeatureExtractionPipeline } from "@xenova/transformers";
+import { pipeline, FeatureExtractionPipeline } from "@huggingface/transformers";
 
 /** Small epsilon value to prevent division by zero in cosine similarity. */
 const COSINE_EPSILON = 1e-10;
@@ -37,7 +37,9 @@ export class Embeddings {
   public async init(): Promise<void> {
     if (this.embedder) return; // already initialized
     console.error(`[MCP] Loading embedding model: ${this.modelName}`);
-    this.embedder = await pipeline("feature-extraction", this.modelName);
+    this.embedder = (await (pipeline as any)("feature-extraction", this.modelName, {
+      dtype: "q8", // Use quantized model for smaller download size
+    })) as FeatureExtractionPipeline;
     console.error(`[MCP] Model ready: ${this.modelName}`);
   }
 
