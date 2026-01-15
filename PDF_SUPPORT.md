@@ -135,15 +135,12 @@ PDF text extraction is CPU-intensive:
 
 ## Implementation Details
 
-### New Files
+### Related Files
 
 - `src/pdf-extractor.ts`: Core PDF extraction and caching logic
-
-### Modified Files
-
-- `src/index.ts`: Updated `read_file` handler to check for PDFs and read from cache
-- `src/indexer.ts`: Updated file processing to detect and extract text from PDFs
-- `src/config.ts`: Added `pdf` to default `ALLOWED_EXT`
+- `src/index.ts`: `read_file` handler checks for PDFs and reads from cache
+- `src/indexer.ts`: File processing detects and extracts text from PDFs
+- `src/config.ts`: `pdf` included in default `ALLOWED_EXT`
 
 ### Dependencies
 

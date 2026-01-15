@@ -14,14 +14,6 @@ export class EmbedderNotInitializedError extends Error {
   }
 }
 
-/** Error thrown when attempting to embed empty or whitespace-only text. */
-export class EmptyTextError extends Error {
-  constructor() {
-    super("Cannot embed empty or whitespace-only text.");
-    this.name = "EmptyTextError";
-  }
-}
-
 /**
  * Encapsulates embedding model initialization and helper utilities for
  * generating embeddings + computing cosine similarity.
