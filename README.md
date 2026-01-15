@@ -297,7 +297,7 @@ Current limitations:
 
 - Change detection uses file size only (content edits keeping identical size won't re‑embed yet).
 - Embedding generation is sequential (no parallel batching yet).
-- Store schema is minimal (version 2); future versions may add hashing or mtime heuristics.
+- Store schema is minimal (version 1); future versions may add hashing or mtime heuristics.
 
 Force a full rebuild by deleting the manifest file (`.manifest.json`) and data files (`.part*.json`) or changing chunk/model parameters.
 

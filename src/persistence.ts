@@ -337,7 +337,7 @@ export class Persistence {
 
     // Create manifest file
     const manifest = {
-      version: 2,
+      version: 1,
       meta: {
         chunkSize,
         chunkOverlap,
