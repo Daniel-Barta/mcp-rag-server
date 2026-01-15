@@ -43,7 +43,7 @@ function parseEnvNumber(
   const raw = value?.trim();
   if (!raw) return defaultValue;
   const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) return defaultValue;
+  if (!Number.isFinite(n) || n < 0) return defaultValue;
   let result = Math.floor(n);
   if (min !== undefined) result = Math.max(min, result);
   if (max !== undefined) result = Math.min(max, result);
