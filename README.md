@@ -276,6 +276,8 @@ Supported variables:
 
 Safety caps: `CHUNK_SIZE` is clamped to 8000 and `CHUNK_OVERLAP` to 4000; if overlap >= size it's automatically reduced (logged) to preserve forward progress.
 
+- `DOCS_PER_FILE` (optional): maximum number of documents to store in a single JSON file when persisting the index (default 10000). This prevents JSON.stringify from creating excessively large strings that could cause memory issues. Lower values create more files but reduce memory pressure during save/load operations. Minimum value is 100.
+
 ## Persistence & Incremental Reindexing
 
 Set `INDEX_STORE_PATH` to enable a persisted JSON index storing chunks + embeddings. On startup:

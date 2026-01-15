@@ -64,6 +64,8 @@ export interface BuildIndexOptions {
   storePath?: string;
   /** Optional injected persistence implementation (useful for tests / alternates) */
   persistence?: Persistence;
+  /** Maximum number of documents per JSON file (default 10000) */
+  docsPerFile?: number;
 }
 
 /**
@@ -123,7 +125,7 @@ export class Indexer {
     this.storePath = opts.storePath;
     this.persistence =
       opts.persistence ??
-      (opts.storePath ? new Persistence(opts.storePath, this.verbose) : undefined);
+      (opts.storePath ? new Persistence(opts.storePath, this.verbose, opts.docsPerFile ?? 10000) : undefined);
     this.pdfExtractor = new PdfExtractor(this.storePath, this.root, this.verbose);
     // If fallback was applied, emit a warning (compare to originally requested value).
     if (this.chunkOverlap !== requestedOverlap && requestedOverlap >= this.chunkSize) {

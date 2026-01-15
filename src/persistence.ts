@@ -4,12 +4,6 @@ import path from "node:path";
 import { Doc } from "./types";
 
 /**
- * Maximum number of documents to store in a single JSON file.
- * This prevents JSON.stringify from creating excessively large strings.
- */
-const DOCS_PER_FILE = 10000;
-
-/**
  * Parameters controlling a load attempt for a previously persisted embedding/chunk index.
  *
  * Notes:
@@ -51,15 +45,19 @@ export class Persistence {
   private storePath?: string;
   /** Default verbosity for the instance (can be overridden per call). */
   private verbose: boolean;
+  /** Maximum number of documents per JSON file (prevents excessively large strings). */
+  private docsPerFile: number;
 
   /**
    * Create a new persistence helper.
    * @param storePath Optional default file path for the persisted index (JSON file).
    * @param verbose   Whether to emit verbose logging by default.
+   * @param docsPerFile Maximum number of documents per JSON file (default 10000).
    */
-  public constructor(storePath?: string, verbose = false) {
+  public constructor(storePath?: string, verbose = false, docsPerFile = 10000) {
     this.storePath = storePath;
     this.verbose = verbose;
+    this.docsPerFile = Math.max(100, Math.floor(docsPerFile)); // minimum 100
   }
 
   /**
@@ -308,12 +306,12 @@ export class Persistence {
     await this.cleanupOldCacheFiles(storeDir, storeBaseName, verbose);
 
     // Split docs into chunks
-    const fileCount = Math.ceil(docs.length / DOCS_PER_FILE);
+    const fileCount = Math.ceil(docs.length / this.docsPerFile);
     const dataFiles: string[] = [];
 
     for (let i = 0; i < fileCount; i++) {
-      const start = i * DOCS_PER_FILE;
-      const end = Math.min((i + 1) * DOCS_PER_FILE, docs.length);
+      const start = i * this.docsPerFile;
+      const end = Math.min((i + 1) * this.docsPerFile, docs.length);
       const chunkDocs = docs.slice(start, end);
 
       const fileName = `${storeBaseName}.part${i.toString().padStart(4, "0")}.json`;

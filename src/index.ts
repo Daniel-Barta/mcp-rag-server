@@ -31,6 +31,7 @@
  *  - CHUNK_OVERLAP        Overlap characters between adjacent chunks (default 120).
  *  - FOLDER_INFO_NAME     Display name used in tool descriptions (default 'REPO_ROOT').
  *  - INDEX_STORE_PATH     If set, path to persist / reload serialized index artifacts.
+ *  - DOCS_PER_FILE        Max documents per JSON file for persistence (default 10000, min 100).
  *  - MCP_TRANSPORT        'stdio' (default) or 'http'.
  *  - TRANSFORMERS_CACHE   Directory for model downloads (set by Embeddings.configureCache()).
  *
@@ -78,6 +79,7 @@ const {
   FOLDER_INFO_NAME,
   INDEX_STORE_PATH,
   MCP_TRANSPORT,
+  DOCS_PER_FILE,
 } = config;
 
 statusManager.setRepoRoot(ROOT);
@@ -121,6 +123,7 @@ const indexer = new Indexer({
   chunkSize: CHUNK_SIZE,
   chunkOverlap: CHUNK_OVERLAP,
   storePath: INDEX_STORE_PATH,
+  docsPerFile: DOCS_PER_FILE,
 });
 // Use PDF extractor from indexer
 const pdfExtractor: PdfExtractor = indexer.getPdfExtractor();

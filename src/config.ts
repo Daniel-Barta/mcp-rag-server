@@ -37,6 +37,7 @@ export interface Config {
   FOLDER_INFO_NAME: string;
   INDEX_STORE_PATH: string | undefined;
   MCP_TRANSPORT: string;
+  DOCS_PER_FILE: number;
 }
 
 export async function getConfig(): Promise<Config> {
@@ -135,6 +136,14 @@ export async function getConfig(): Promise<Config> {
   // Transport mode: 'stdio' (default) or 'http'.
   const MCP_TRANSPORT = (process.env.MCP_TRANSPORT ?? "").trim().toLowerCase();
 
+  // Maximum documents per JSON file for persistence (default 10000).
+  const DOCS_PER_FILE = (() => {
+    const raw = process.env.DOCS_PER_FILE?.trim();
+    if (!raw) return 10000;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? Math.max(100, Math.floor(n)) : 10000; // minimum 100
+  })();
+
   return {
     ROOT,
     ALLOWED_EXT,
@@ -145,5 +154,6 @@ export async function getConfig(): Promise<Config> {
     FOLDER_INFO_NAME,
     INDEX_STORE_PATH,
     MCP_TRANSPORT,
+    DOCS_PER_FILE,
   };
 }
