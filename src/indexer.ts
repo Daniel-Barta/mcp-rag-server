@@ -241,8 +241,8 @@ export class Indexer {
     if (loadedDocs) {
       this.docs.length = 0;
       this.docs.push(...loadedDocs);
-      await this.incrementalUpdate();
-      if (this.persistence) {
+      const hasChanges = await this.incrementalUpdate();
+      if (hasChanges && this.persistence) {
         await this.persistence.save({
           storePath: this.storePath,
           docs: this.docs,
@@ -413,8 +413,10 @@ export class Indexer {
    *
    * NOTE: File size collisions (different content, same size) won’t trigger a re-embed.
    * For higher fidelity consider hashing content or comparing mtimes.
+   *
+   * @returns true if changes were detected and processed, false otherwise
    */
-  private async incrementalUpdate(): Promise<void> {
+  private async incrementalUpdate(): Promise<boolean> {
     console.error(`[MCP] Incremental index check starting...`);
     const fileInfos = await this.discoverFiles();
     const currentMap = new Map<string, { abs: string; size: number }>();
@@ -470,7 +472,7 @@ export class Indexer {
       statusManager.setIndexTotals(currentMap.size, this.docs.length);
       statusManager.incEmbedded(this.docs.length); // count all as embedded
       statusManager.markReady();
-      return;
+      return false;
     }
 
     // Re-embed changed/new files
@@ -512,5 +514,6 @@ export class Indexer {
     console.error(
       `[MCP] Incremental update complete. Changed files: ${changed.length}, removed: ${removed.length}. Total chunks: ${this.docs.length}`,
     );
+    return true;
   }
 }
