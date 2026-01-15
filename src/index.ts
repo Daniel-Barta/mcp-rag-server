@@ -16,6 +16,7 @@
  * Exposed tools:
  *  - rag_query : Vector similarity search returning top matching code/text chunks.
  *  - read_file : Targeted file (or line range) retrieval for follow‑up inspection.
+ *  - list_files: Directory listing with filtering options
  *
  * Design goals:
  *  - Zero external DB: all embeddings live in process (optionally disk cache for reuse).

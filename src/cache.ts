@@ -21,13 +21,8 @@ export async function configureTransformersCache(cacheDir?: string): Promise<str
     cacheDir?.trim() ||
     process.env.TRANSFORMERS_CACHE?.trim() ||
     path.resolve(process.cwd(), ".cache/transformers");
-  try {
-    await fs.mkdir(dir, { recursive: true }).catch(() => {
-      /* noop */
-    });
-  } catch {
-    // ignore
-  }
+  await fs.mkdir(dir, { recursive: true }).catch(() => {});
+  env.useBrowserCache = false;
   env.useBrowserCache = false; // ensure filesystem cache in Node
   env.cacheDir = dir;
   env.allowLocalModels = true;
