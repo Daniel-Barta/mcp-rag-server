@@ -82,7 +82,7 @@ export interface BuildIndexOptions {
  *   root: repoRoot,
  *   allowedExt: ["ts", "tsx", "js", "md"],
  *   embeddings,
- *   storePath: path.join(repoRoot, ".mcp-index.json"),
+ *   storePath: path.join(repoRoot, "index"),
  *   verbose: true,
  * });
  * await indexer.build();

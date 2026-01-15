@@ -22,7 +22,7 @@ Two transports are supported (select with `MCP_TRANSPORT=stdio|http`):
 - Fast glob file discovery and overlapping chunking for better recall
 - Simple cosine similarity ranking (optionally swap to ANN later)
 - Pluggable model selection via `MODEL_NAME` (see guidance below)
-- Optional persistent JSON index + warm start & incremental reindexing via `INDEX_STORE_PATH`
+- Optional persistent index (multi-file storage) + warm start & incremental reindexing via `INDEX_STORE_PATH`
 - Incremental change detection (additions / deletions / file size changes) to avoid full rebuilds
 - Stdio or Streamable HTTP transport (with optional host allow‑list / DNS rebinding protection)
 - Safe path handling (rejects attempts to escape `REPO_ROOT`)
@@ -258,7 +258,7 @@ Supported variables:
 - `EXCLUDED_FOLDERS` (optional): comma-separated list of folder patterns to exclude from indexing. Supports both exact folder names (e.g., `node_modules,dist,build,.git`) and basic glob patterns (e.g., `**/test/**,**/tests/**`). Files in these folders will be skipped during indexing. Defaults include common build/dependency folders: `node_modules`, `dist`, `build`, `.git`, `target`, `bin`, `obj`, `.cache`, `coverage`, `.nyc_output`.
 - `MCP_TRANSPORT` (optional): `http` or `stdio`.
 - `VERBOSE` (optional): true/1/yes/on for more granular progress logs during indexing & embedding.
-- `INDEX_STORE_PATH` (optional): path to a persisted JSON embedding index (e.g., `C:\repo\.mcp-index.json` or `/repo/.mcp-index.json`). Enables fast warm starts + incremental reindex (new / deleted / size‑changed files only).
+- `INDEX_STORE_PATH` (optional): base path for persisted embedding index storage (e.g., `C:\repo\.mcp-index` or `/repo/.mcp-index`). The index is stored as multiple JSON files with this prefix (e.g., `.mcp-index.part0000.json`, `.mcp-index.part0001.json`, etc.) along with a manifest file (`.mcp-index.manifest.json`) that tracks metadata, compatibility parameters, and the list of data files. Enables fast warm starts + incremental reindex (new / deleted / size‑changed files only).
 - `MODEL_NAME` (optional): override the default embedding model (`jinaai/jina-embeddings-v2-base-code`). Examples:
   - `MODEL_NAME=jinaai/jina-embeddings-v2-base-code` (default) — Balanced multilingual/code embedding model; strong for mixed natural language + source code semantic search.
   - `MODEL_NAME=Xenova/bge-base-en-v1.5` — High-quality English general-purpose text embeddings (good for documentation/wiki style corpora).
@@ -280,11 +280,13 @@ Safety caps: `CHUNK_SIZE` is clamped to 8000 and `CHUNK_OVERLAP` to 4000; if ove
 
 ## Persistence & Incremental Reindexing
 
-Set `INDEX_STORE_PATH` to enable a persisted JSON index storing chunks + embeddings. On startup:
+Set `INDEX_STORE_PATH` to enable a persisted index storing chunks + embeddings across multiple JSON files. On startup:
 
-1. If the file exists and its metadata (model name, chunk size, overlap) matches, it is loaded into memory.
+1. If the manifest file exists (`.manifest.json`) and its metadata (model name, chunk size, overlap) matches, the index is loaded from the data files referenced in the manifest.
 2. The repository is rescanned; removed files' chunks are discarded, and new or size‑changed files are re‑chunked & re‑embedded.
-3. The merged index is saved back (cold build path also persists when configured).
+3. The merged index is saved back to disk (cold build path also persists when configured).
+
+The manifest file contains metadata about the index (version, chunk parameters, model name, timestamp) and a list of all data files (`.part####.json`) that comprise the full index.
 
 Benefits:
 
@@ -295,9 +297,9 @@ Current limitations:
 
 - Change detection uses file size only (content edits keeping identical size won't re‑embed yet).
 - Embedding generation is sequential (no parallel batching yet).
-- Store schema is minimal (version 1); future versions may add hashing or mtime heuristics.
+- Store schema is minimal (version 2); future versions may add hashing or mtime heuristics.
 
-Force a full rebuild by deleting the store file or changing chunk/model parameters.
+Force a full rebuild by deleting the manifest file (`.manifest.json`) and data files (`.part*.json`) or changing chunk/model parameters.
 
 ## Visual Studio integration (MCP)
 
@@ -377,7 +379,7 @@ Set environment variables once in your PowerShell session, then start. The optio
 ```powershell
 $env:REPO_ROOT = "C:\path\to\ProjectB"
 $env:MCP_TRANSPORT = "http"
-$env:INDEX_STORE_PATH = "C:\path\to\ProjectB\.mcp-index.json"   # optional but recommended
+$env:INDEX_STORE_PATH = "C:\path\to\ProjectB\.mcp-index"   # optional but recommended
 $env:ALLOWED_EXT = "java,kt,kts,md,xml,gradle,properties"           # tailor for Java projects
 # Optional: cache model files to a fast local folder
 # $env:TRANSFORMERS_CACHE = "C:\model-cache"
