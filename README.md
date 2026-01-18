@@ -2,7 +2,7 @@
 
 `mcp-rag-server` is a lightweight, zero‑network (after model download) Retrieval‑Augmented Generation helper you can plug into **any client that speaks the [Model Context Protocol (MCP)]**. GitHub Copilot Agent mode in Visual Studio / VS Code is just one option – you can also use the official MCP Inspector, future MCP‑aware IDEs, or custom tooling.
 
-It indexes a target repository directory, chunks the content (default chunk size **800** chars with **120** char overlap – both configurable via `CHUNK_SIZE` / `CHUNK_OVERLAP`), builds **local embeddings** using `@xenova/transformers`, and exposes MCP tools:
+It indexes a target repository directory, chunks the content (default chunk size **800** chars with **120** char overlap – both configurable via `CHUNK_SIZE` / `CHUNK_OVERLAP`), builds **local embeddings** using `@huggingface/transformers`, and exposes MCP tools:
 
 - `rag_query` – semantic search returning scored snippets (path, score, snippet)
 - `read_file` – secure file read (optional line range) constrained to `REPO_ROOT`. For PDF files, text is automatically retrieved from the unified cache file if available
@@ -15,14 +15,14 @@ Two transports are supported (select with `MCP_TRANSPORT=stdio|http`):
 
 ## Features
 
-- Pure local embedding inference (no external API calls) via `@xenova/transformers`
+- Pure local embedding inference (no external API calls) via `@huggingface/transformers`
 - Multi‑language source + docs support (configurable via `ALLOWED_EXT`)
 - **PDF support**: Automatically extracts text from PDF files during indexing and caches it in a unified `pdf-text-cache.json` file (located alongside the index store) for fast retrieval. PDF text is treated like any other text file for semantic search
 - Excluded folder patterns support (configurable via `EXCLUDED_FOLDERS`)
 - Fast glob file discovery and overlapping chunking for better recall
 - Simple cosine similarity ranking (optionally swap to ANN later)
 - Pluggable model selection via `MODEL_NAME` (see guidance below)
-- Optional persistent JSON index + warm start & incremental reindexing via `INDEX_STORE_PATH`
+- Optional persistent index (multi-file storage) + warm start & incremental reindexing via `INDEX_STORE_PATH`
 - Incremental change detection (additions / deletions / file size changes) to avoid full rebuilds
 - Stdio or Streamable HTTP transport (with optional host allow‑list / DNS rebinding protection)
 - Safe path handling (rejects attempts to escape `REPO_ROOT`)
@@ -258,12 +258,12 @@ Supported variables:
 - `EXCLUDED_FOLDERS` (optional): comma-separated list of folder patterns to exclude from indexing. Supports both exact folder names (e.g., `node_modules,dist,build,.git`) and basic glob patterns (e.g., `**/test/**,**/tests/**`). Files in these folders will be skipped during indexing. Defaults include common build/dependency folders: `node_modules`, `dist`, `build`, `.git`, `target`, `bin`, `obj`, `.cache`, `coverage`, `.nyc_output`.
 - `MCP_TRANSPORT` (optional): `http` or `stdio`.
 - `VERBOSE` (optional): true/1/yes/on for more granular progress logs during indexing & embedding.
-- `INDEX_STORE_PATH` (optional): path to a persisted JSON embedding index (e.g., `C:\repo\.mcp-index.json` or `/repo/.mcp-index.json`). Enables fast warm starts + incremental reindex (new / deleted / size‑changed files only).
+- `INDEX_STORE_PATH` (optional): base path for persisted embedding index storage (e.g., `C:\repo\.mcp-index` or `/repo/.mcp-index`). The index is stored as multiple JSON files with this prefix (e.g., `.mcp-index.part0000.json`, `.mcp-index.part0001.json`, etc.) along with a manifest file (`.mcp-index.manifest.json`) that tracks metadata, compatibility parameters, and the list of data files. Enables fast warm starts + incremental reindex (new / deleted / size‑changed files only).
 - `MODEL_NAME` (optional): override the default embedding model (`jinaai/jina-embeddings-v2-base-code`). Examples:
   - `MODEL_NAME=jinaai/jina-embeddings-v2-base-code` (default) — Balanced multilingual/code embedding model; strong for mixed natural language + source code semantic search.
   - `MODEL_NAME=Xenova/bge-base-en-v1.5` — High-quality English general-purpose text embeddings (good for documentation/wiki style corpora).
   - `MODEL_NAME=Xenova/bge-small-en-v1.5` — Faster/lighter English model when latency or memory matters more than a few points of recall.
-    Any compatible sentence / feature-extraction model supported by `@xenova/transformers` should work.
+    Any compatible sentence / feature-extraction model supported by `@huggingface/transformers` should work.
 - `HOST` (optional, HTTP mode): bind host (default `127.0.0.1`).
 - `MCP_PORT` (optional, HTTP mode): TCP port (default `3000`).
 - `ENABLE_DNS_REBINDING_PROTECTION` (optional, HTTP mode): defaults to `true`; set to `false` to disable host allow‑list checks.
@@ -276,13 +276,17 @@ Supported variables:
 
 Safety caps: `CHUNK_SIZE` is clamped to 8000 and `CHUNK_OVERLAP` to 4000; if overlap >= size it's automatically reduced (logged) to preserve forward progress.
 
+- `DOCS_PER_FILE` (optional): maximum number of documents to store in a single JSON file when persisting the index (default 10000). This prevents JSON.stringify from creating excessively large strings that could cause memory issues. Lower values create more files but reduce memory pressure during save/load operations. Minimum value is 100.
+
 ## Persistence & Incremental Reindexing
 
-Set `INDEX_STORE_PATH` to enable a persisted JSON index storing chunks + embeddings. On startup:
+Set `INDEX_STORE_PATH` to enable a persisted index storing chunks + embeddings across multiple JSON files. On startup:
 
-1. If the file exists and its metadata (model name, chunk size, overlap) matches, it is loaded into memory.
+1. If the manifest file exists (`.manifest.json`) and its metadata (model name, chunk size, overlap) matches, the index is loaded from the data files referenced in the manifest.
 2. The repository is rescanned; removed files' chunks are discarded, and new or size‑changed files are re‑chunked & re‑embedded.
-3. The merged index is saved back (cold build path also persists when configured).
+3. The merged index is saved back to disk (cold build path also persists when configured).
+
+The manifest file contains metadata about the index (version, chunk parameters, model name, timestamp) and a list of all data files (`.part####.json`) that comprise the full index.
 
 Benefits:
 
@@ -295,7 +299,7 @@ Current limitations:
 - Embedding generation is sequential (no parallel batching yet).
 - Store schema is minimal (version 1); future versions may add hashing or mtime heuristics.
 
-Force a full rebuild by deleting the store file or changing chunk/model parameters.
+Force a full rebuild by deleting the manifest file (`.manifest.json`) and data files (`.part*.json`) or changing chunk/model parameters.
 
 ## Visual Studio integration (MCP)
 
@@ -375,7 +379,7 @@ Set environment variables once in your PowerShell session, then start. The optio
 ```powershell
 $env:REPO_ROOT = "C:\path\to\ProjectB"
 $env:MCP_TRANSPORT = "http"
-$env:INDEX_STORE_PATH = "C:\path\to\ProjectB\.mcp-index.json"   # optional but recommended
+$env:INDEX_STORE_PATH = "C:\path\to\ProjectB\.mcp-index"   # optional but recommended
 $env:ALLOWED_EXT = "java,kt,kts,md,xml,gradle,properties"           # tailor for Java projects
 # Optional: cache model files to a fast local folder
 # $env:TRANSFORMERS_CACHE = "C:\model-cache"

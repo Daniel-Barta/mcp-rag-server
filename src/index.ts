@@ -16,6 +16,7 @@
  * Exposed tools:
  *  - rag_query : Vector similarity search returning top matching code/text chunks.
  *  - read_file : Targeted file (or line range) retrieval for follow‑up inspection.
+ *  - list_files: Directory listing with filtering options
  *
  * Design goals:
  *  - Zero external DB: all embeddings live in process (optionally disk cache for reuse).
@@ -31,6 +32,7 @@
  *  - CHUNK_OVERLAP        Overlap characters between adjacent chunks (default 120).
  *  - FOLDER_INFO_NAME     Display name used in tool descriptions (default 'REPO_ROOT').
  *  - INDEX_STORE_PATH     If set, path to persist / reload serialized index artifacts.
+ *  - DOCS_PER_FILE        Max documents per JSON file for persistence (default 10000, min 100).
  *  - MCP_TRANSPORT        'stdio' (default) or 'http'.
  *  - TRANSFORMERS_CACHE   Directory for model downloads (set by Embeddings.configureCache()).
  *
@@ -78,6 +80,7 @@ const {
   FOLDER_INFO_NAME,
   INDEX_STORE_PATH,
   MCP_TRANSPORT,
+  DOCS_PER_FILE,
 } = config;
 
 statusManager.setRepoRoot(ROOT);
@@ -121,6 +124,7 @@ const indexer = new Indexer({
   chunkSize: CHUNK_SIZE,
   chunkOverlap: CHUNK_OVERLAP,
   storePath: INDEX_STORE_PATH,
+  docsPerFile: DOCS_PER_FILE,
 });
 // Use PDF extractor from indexer
 const pdfExtractor: PdfExtractor = indexer.getPdfExtractor();

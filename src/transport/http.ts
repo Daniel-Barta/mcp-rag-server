@@ -87,17 +87,14 @@ export async function startHttpTransport(createServer: () => Server) {
 
   const port = Number(process.env.MCP_PORT ?? 3000);
   const host = (process.env.HOST ?? "127.0.0.1").trim();
-  const defaultAllowedHosts = (() => {
-    const base = new Set<string>([
-      "127.0.0.1",
-      `127.0.0.1:${port}`,
-      "localhost",
-      `localhost:${port}`,
-      host,
-      `${host}:${port}`,
-    ]);
-    return Array.from(base);
-  })();
+  const defaultAllowedHosts = [
+    "127.0.0.1",
+    `127.0.0.1:${port}`,
+    "localhost",
+    `localhost:${port}`,
+    host,
+    `${host}:${port}`,
+  ];
 
   // sessionId -> transport
   /** Active session transports mapped by session id. */

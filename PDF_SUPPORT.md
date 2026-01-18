@@ -26,7 +26,7 @@ When `read_file` is called on a PDF file:
 
 ## Cache Structure
 
-All PDF text extractions are stored in a single unified cache file located in the same directory as `INDEX_STORE_PATH` (or the repository root if not specified):
+All PDF text extractions are stored in a single unified cache file located in the same directory as the `INDEX_STORE_PATH` base path (or the repository root if not specified):
 
 ```
 pdf-text-cache.json
@@ -79,7 +79,7 @@ export ALLOWED_EXT="ts,js,md,txt"
 
 ### Cache Location
 
-The unified PDF cache file (`pdf-text-cache.json`) is stored in the same directory as your `INDEX_STORE_PATH` configuration. If `INDEX_STORE_PATH` is not set, it defaults to the repository root.
+The unified PDF cache file (`pdf-text-cache.json`) is stored in the same directory as your `INDEX_STORE_PATH` base path. If `INDEX_STORE_PATH` is not set, it defaults to the repository root.
 
 To ensure Git ignores the cache, add to `.gitignore`:
 
@@ -135,15 +135,12 @@ PDF text extraction is CPU-intensive:
 
 ## Implementation Details
 
-### New Files
+### Related Files
 
 - `src/pdf-extractor.ts`: Core PDF extraction and caching logic
-
-### Modified Files
-
-- `src/index.ts`: Updated `read_file` handler to check for PDFs and read from cache
-- `src/indexer.ts`: Updated file processing to detect and extract text from PDFs
-- `src/config.ts`: Added `pdf` to default `ALLOWED_EXT`
+- `src/index.ts`: `read_file` handler checks for PDFs and reads from cache
+- `src/indexer.ts`: File processing detects and extracts text from PDFs
+- `src/config.ts`: `pdf` included in default `ALLOWED_EXT`
 
 ### Dependencies
 

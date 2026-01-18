@@ -27,6 +27,29 @@ import pkg from "../package.json" with { type: "json" };
 /** Application version sourced from package.json. */
 export const APP_VERSION: string = pkg.version;
 
+/** Parse a boolean from environment variable (supports 1/true/yes/on). */
+function parseEnvBool(value: string | undefined): boolean {
+  const v = (value ?? "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
+/** Parse a number from environment variable with default and optional min/max clamping. */
+function parseEnvNumber(
+  value: string | undefined,
+  defaultValue: number,
+  min?: number,
+  max?: number,
+): number {
+  const raw = value?.trim();
+  if (!raw) return defaultValue;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return defaultValue;
+  let result = Math.floor(n);
+  if (min !== undefined) result = Math.max(min, result);
+  if (max !== undefined) result = Math.min(max, result);
+  return result;
+}
+
 export interface Config {
   ROOT: string;
   ALLOWED_EXT: string[];
@@ -37,6 +60,7 @@ export interface Config {
   FOLDER_INFO_NAME: string;
   INDEX_STORE_PATH: string | undefined;
   MCP_TRANSPORT: string;
+  DOCS_PER_FILE: number;
 }
 
 export async function getConfig(): Promise<Config> {
@@ -103,28 +127,15 @@ export async function getConfig(): Promise<Config> {
     ".nyc_output",
   ];
 
-  // Verbosity toggle with tolerant truthy parsing (supports several common forms).
-  const VERBOSE = (() => {
-    const v = (process.env.VERBOSE ?? "").trim().toLowerCase();
-    return v === "1" || v === "true" || v === "yes" || v === "on";
-  })();
+  // Verbosity toggle
+  const VERBOSE = parseEnvBool(process.env.VERBOSE);
 
   // Chunk sizing (optional env overrides; defaults 800 / 120)
   // Chunk size impacts recall (too large) vs. precision (too small). Trade‑off is tunable.
-  const CHUNK_SIZE = (() => {
-    const raw = process.env.CHUNK_SIZE?.trim();
-    if (!raw) return 800;
-    const n = Number(raw);
-    return Number.isFinite(n) && n > 0 ? Math.min(8000, Math.floor(n)) : 800; // clamp to sane upper bound
-  })();
+  const CHUNK_SIZE = parseEnvNumber(process.env.CHUNK_SIZE, 800, 1, 8000);
 
   // Overlap helps preserve context continuity across semantic chunks.
-  const CHUNK_OVERLAP = (() => {
-    const raw = process.env.CHUNK_OVERLAP?.trim();
-    if (!raw) return 120;
-    const n = Number(raw);
-    return Number.isFinite(n) && n >= 0 ? Math.min(4000, Math.floor(n)) : 120;
-  })();
+  const CHUNK_OVERLAP = parseEnvNumber(process.env.CHUNK_OVERLAP, 120, 0, 4000);
 
   // Human‑friendly label used purely in tool descriptions; does not affect disk paths.
   const FOLDER_INFO_NAME = process.env.FOLDER_INFO_NAME?.trim() || "REPO_ROOT";
@@ -134,6 +145,9 @@ export async function getConfig(): Promise<Config> {
 
   // Transport mode: 'stdio' (default) or 'http'.
   const MCP_TRANSPORT = (process.env.MCP_TRANSPORT ?? "").trim().toLowerCase();
+
+  // Maximum documents per JSON file for persistence (default 10000).
+  const DOCS_PER_FILE = parseEnvNumber(process.env.DOCS_PER_FILE, 10000, 100);
 
   return {
     ROOT,
@@ -145,5 +159,6 @@ export async function getConfig(): Promise<Config> {
     FOLDER_INFO_NAME,
     INDEX_STORE_PATH,
     MCP_TRANSPORT,
+    DOCS_PER_FILE,
   };
 }

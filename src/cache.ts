@@ -6,10 +6,10 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { env } from "@xenova/transformers";
+import { env } from "@huggingface/transformers";
 
 /**
- * Configure the @xenova/transformers cache directory for Node.js execution.
+ * Configure the @huggingface/transformers cache directory for Node.js execution.
  * Should be invoked early in startup, before any model/pipeline is created.
  *
  * @param cacheDir Optional explicit directory. Falls back to TRANSFORMERS_CACHE,
@@ -21,13 +21,7 @@ export async function configureTransformersCache(cacheDir?: string): Promise<str
     cacheDir?.trim() ||
     process.env.TRANSFORMERS_CACHE?.trim() ||
     path.resolve(process.cwd(), ".cache/transformers");
-  try {
-    await fs.mkdir(dir, { recursive: true }).catch(() => {
-      /* noop */
-    });
-  } catch {
-    // ignore
-  }
+  await fs.mkdir(dir, { recursive: true }).catch(() => {});
   env.useBrowserCache = false; // ensure filesystem cache in Node
   env.cacheDir = dir;
   env.allowLocalModels = true;
