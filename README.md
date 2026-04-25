@@ -1,8 +1,8 @@
-# mcp-rag-server (local RAG MCP server for any repository)
+# mcp-rag-server (RAG MCP server for any repository)
 
-`mcp-rag-server` is a lightweight, zero‑network (after model download) Retrieval‑Augmented Generation helper you can plug into **any client that speaks the [Model Context Protocol (MCP)]**. GitHub Copilot Agent mode in Visual Studio / VS Code is just one option – you can also use the official MCP Inspector, future MCP‑aware IDEs, or custom tooling.
+`mcp-rag-server` is a lightweight Retrieval‑Augmented Generation helper you can plug into **any client that speaks the [Model Context Protocol (MCP)]**. GitHub Copilot Agent mode in Visual Studio / VS Code is just one option – you can also use the official MCP Inspector, future MCP‑aware IDEs, or custom tooling.
 
-It indexes a target repository directory, chunks the content (default chunk size **800** chars with **120** char overlap – both configurable via `CHUNK_SIZE` / `CHUNK_OVERLAP`), builds **local embeddings** using `@huggingface/transformers`, and exposes MCP tools:
+It indexes a target repository directory, chunks the content (default chunk size **800** chars with **120** char overlap – both configurable via `CHUNK_SIZE` / `CHUNK_OVERLAP`), builds embeddings using either **local inference** via `@huggingface/transformers` or an **OpenAI‑compatible embeddings API**, and exposes MCP tools:
 
 - `rag_query` – semantic search returning scored snippets (path, score, snippet)
 - `read_file` – secure file read (optional line range) constrained to `REPO_ROOT`. For PDF files, text is automatically retrieved from the unified cache file if available
@@ -15,7 +15,7 @@ Two transports are supported (select with `MCP_TRANSPORT=stdio|http`):
 
 ## Features
 
-- Pure local embedding inference (no external API calls) via `@huggingface/transformers`
+- Embeddings via local inference (`@huggingface/transformers`) or an OpenAI‑compatible API
 - Multi‑language source + docs support (configurable via `ALLOWED_EXT`)
 - **PDF support**: Automatically extracts text from PDF files during indexing and caches it in a unified `pdf-text-cache.json` file (located alongside the index store) for fast retrieval. PDF text is treated like any other text file for semantic search
 - Excluded folder patterns support (configurable via `EXCLUDED_FOLDERS`)
@@ -26,7 +26,7 @@ Two transports are supported (select with `MCP_TRANSPORT=stdio|http`):
 - Incremental change detection (additions / deletions / file size changes) to avoid full rebuilds
 - Stdio or Streamable HTTP transport (with optional host allow‑list / DNS rebinding protection)
 - Safe path handling (rejects attempts to escape `REPO_ROOT`)
-- Minimal dependencies; quick startup after first model load
+- Minimal dependencies; quick startup after first local model load or remote API validation
 - Ready for extension: add new MCP tools or ANN / hybrid retrieval backends
 
 Planned / Nice‑to‑have: hybrid BM25 + embedding search, ANN acceleration (HNSW / IVF), per‑language tokenizer heuristics, batched / parallel embedding, semantic boundary aware chunking.
@@ -78,6 +78,38 @@ Optionally set a model cache to speed up subsequent runs (first start downloads 
 export TRANSFORMERS_CACHE="/path/to/cache"   # macOS/Linux
 $env:TRANSFORMERS_CACHE="C:\path\to\cache" # Windows PowerShell
 ```
+
+### OpenAI-compatible API embeddings
+
+Set `EMBEDDING_PROVIDER=openai` to call a remote `/embeddings` endpoint instead of loading a local transformer model. The request format follows the OpenAI embeddings API and works with providers that expose a compatible protocol such as OpenAI, Mistral, and Jina AI.
+
+Windows PowerShell:
+
+```powershell
+$env:REPO_ROOT="C:\path\to\your-repo"
+$env:EMBEDDING_PROVIDER="openai"
+$env:EMBEDDING_API_BASE_URL="https://api.openai.com/v1"
+$env:EMBEDDING_API_KEY="<your-api-key>"
+$env:MODEL_NAME="text-embedding-3-large"
+npm start
+```
+
+macOS / Linux:
+
+```bash
+export REPO_ROOT="/path/to/your-repo"
+export EMBEDDING_PROVIDER="openai"
+export EMBEDDING_API_BASE_URL="https://api.openai.com/v1"
+export EMBEDDING_API_KEY="<your-api-key>"
+export MODEL_NAME="text-embedding-3-large"
+npm start
+```
+
+Notes:
+
+- `EMBEDDING_API_BASE_URL` should point to the provider's API base (for example `https://api.openai.com/v1`), not the `/embeddings` path itself.
+- `MODEL_NAME` is passed verbatim to the remote embeddings API when `EMBEDDING_PROVIDER=openai`.
+- `TRANSFORMERS_CACHE` is only relevant for local inference.
 
 ### Streamable HTTP mode (recommended for large initial indexes)
 
@@ -161,8 +193,8 @@ export REPO_ROOT="/path/to/your-repo"; MCP_TRANSPORT=http npx @modelcontextproto
 
 Notes:
 
-- First run downloads the embedding model and builds embeddings; the Inspector will connect only after startup completes. Watch the terminal for progress logs printed to stderr.
-- You can also put settings in a `.env` file at the project root (e.g., `REPO_ROOT`, `TRANSFORMERS_CACHE`).
+- First run in local mode downloads the embedding model and builds embeddings; the Inspector will connect only after startup completes. Watch the terminal for progress logs printed to stderr.
+- You can also put settings in a `.env` file at the project root (e.g., `REPO_ROOT`, `TRANSFORMERS_CACHE`, `EMBEDDING_PROVIDER`, `EMBEDDING_API_BASE_URL`).
 
 In the Inspector UI:
 
@@ -253,17 +285,20 @@ Supported variables:
 
 - `REPO_ROOT` (required): path to the repository to index.
 - `FOLDER_INFO_NAME` (optional): display label used inside MCP tool descriptions for the repository root (default `REPO_ROOT`). This is purely cosmetic for client UX; it does NOT affect which directory is indexed (that is controlled only by `REPO_ROOT`). Set it if you prefer a friendlier name (e.g., `frontend-app` or `monorepo-root`) to appear in tool metadata and path guidance returned to the client.
-- `TRANSFORMERS_CACHE` (optional): cache folder for model files.
+- `EMBEDDING_PROVIDER` (optional): `local` (default) or `openai`. `openai` means “use an OpenAI-compatible `/embeddings` API”, not specifically OpenAI as the vendor.
+- `TRANSFORMERS_CACHE` (optional): cache folder for local model files.
+- `EMBEDDING_API_BASE_URL` (required when `EMBEDDING_PROVIDER=openai`): base URL for the OpenAI-compatible API, such as `https://api.openai.com/v1`, `https://api.mistral.ai/v1`, or your provider-specific equivalent.
+- `EMBEDDING_API_KEY` (required when `EMBEDDING_PROVIDER=openai`): bearer token used for the embeddings API.
 - `ALLOWED_EXT` (optional): comma-separated list of file extensions to index. Default includes common text/code formats plus `pdf`. PDF files are automatically processed: text is extracted once during indexing and cached in a unified `pdf-text-cache.json` file for fast retrieval.
 - `EXCLUDED_FOLDERS` (optional): comma-separated list of folder patterns to exclude from indexing. Supports both exact folder names (e.g., `node_modules,dist,build,.git`) and basic glob patterns (e.g., `**/test/**,**/tests/**`). Files in these folders will be skipped during indexing. Defaults include common build/dependency folders: `node_modules`, `dist`, `build`, `.git`, `target`, `bin`, `obj`, `.cache`, `coverage`, `.nyc_output`.
 - `MCP_TRANSPORT` (optional): `http` or `stdio`.
 - `VERBOSE` (optional): true/1/yes/on for more granular progress logs during indexing & embedding.
 - `INDEX_STORE_PATH` (optional): base path for persisted embedding index storage (e.g., `C:\repo\.mcp-index` or `/repo/.mcp-index`). The index is stored as multiple JSON files with this prefix (e.g., `.mcp-index.part0000.json`, `.mcp-index.part0001.json`, etc.) along with a manifest file (`.mcp-index.manifest.json`) that tracks metadata, compatibility parameters, and the list of data files. Enables fast warm starts + incremental reindex (new / deleted / size‑changed files only).
-- `MODEL_NAME` (optional): override the default embedding model (`jinaai/jina-embeddings-v2-base-code`). Examples:
+- `MODEL_NAME` (optional): override the default embedding model (`jinaai/jina-embeddings-v2-base-code`). For `EMBEDDING_PROVIDER=local`, this must be a model supported by `@huggingface/transformers`. For `EMBEDDING_PROVIDER=openai`, this is passed directly to the remote `/embeddings` API. Examples:
   - `MODEL_NAME=jinaai/jina-embeddings-v2-base-code` (default) — Balanced multilingual/code embedding model; strong for mixed natural language + source code semantic search.
   - `MODEL_NAME=Xenova/bge-base-en-v1.5` — High-quality English general-purpose text embeddings (good for documentation/wiki style corpora).
   - `MODEL_NAME=Xenova/bge-small-en-v1.5` — Faster/lighter English model when latency or memory matters more than a few points of recall.
-    Any compatible sentence / feature-extraction model supported by `@huggingface/transformers` should work.
+    Any compatible sentence / feature-extraction model supported by `@huggingface/transformers` should work for local mode.
 - `HOST` (optional, HTTP mode): bind host (default `127.0.0.1`).
 - `MCP_PORT` (optional, HTTP mode): TCP port (default `3000`).
 - `ENABLE_DNS_REBINDING_PROTECTION` (optional, HTTP mode): defaults to `true`; set to `false` to disable host allow‑list checks.
@@ -299,7 +334,7 @@ Current limitations:
 - Embedding generation is sequential (no parallel batching yet).
 - Store schema is minimal (version 1); future versions may add hashing or mtime heuristics.
 
-Force a full rebuild by deleting the manifest file (`.manifest.json`) and data files (`.part*.json`) or changing chunk/model parameters.
+Force a full rebuild by deleting the manifest file (`.manifest.json`) and data files (`.part*.json`) or changing chunk/model/provider parameters.
 
 ## Visual Studio integration (MCP)
 
@@ -331,19 +366,22 @@ Sample prompt:
 
 ## Notes
 
-- First run will download and cache the model (tens to ~100 MB) and build embeddings — this may take minutes depending on repo size.
+- First run in local mode will download and cache the model (tens to ~100 MB) and build embeddings — this may take minutes depending on repo size.
 - Logs are written to stderr (console.error) to keep MCP stdout clean.
 - For very large repos, consider adding an ANN index (`hnswlib-node`) or a hybrid BM25+embeddings setup.
 
 ### Model selection guidance
 
-Choose an embedding model based on your repository characteristics:
+Choose an embedding setup based on your repository characteristics:
+
+- `EMBEDDING_PROVIDER=local` with `jinaai/jina-embeddings-v2-base-code` (default): Use when you want a fully local workflow after the initial model download and your corpus contains a meaningful amount of source code mixed with README / design docs.
+- `EMBEDDING_PROVIDER=openai`: Use when you want a hosted embeddings service, centralized credentials, or a provider-specific managed model exposed through an OpenAI-compatible API.
 
 - `jinaai/jina-embeddings-v2-base-code` (default): Use when your corpus contains a meaningful amount of source code (multi-language) mixed with README / design docs. Provides strong cross-domain alignment for code-symbol + natural language queries.
 - `Xenova/bge-base-en-v1.5`: Use when the content is predominantly English natural language (docs, knowledge base) and you want slightly stronger pure text semantic quality.
 - `Xenova/bge-small-en-v1.5`: Use for faster startup / lower memory on constrained machines or when indexing very large repos where throughput matters.
 
-Feel free to experiment—swap via `MODEL_NAME` and rebuild the embedding cache (delete any existing cached vectors if you persist them externally).
+Feel free to experiment—swap via `MODEL_NAME` and rebuild the embedding cache (delete any existing cached vectors if you persist them externally). Changing `EMBEDDING_PROVIDER` also invalidates the persisted cache on purpose.
 
 ### Chunk sizing guidance
 

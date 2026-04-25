@@ -6,12 +6,56 @@ const COSINE_EPSILON = 1e-10;
 /** Default embedding model used when none is specified. */
 export const DEFAULT_EMBEDDING_MODEL = "jinaai/jina-embeddings-v2-base-code";
 
+/** Supported embedding backends. */
+export type EmbeddingProvider = "local" | "openai";
+
+const DEFAULT_EMBEDDING_PROVIDER: EmbeddingProvider = "local";
+
 /** Error thrown when attempting to embed before initialization. */
 export class EmbedderNotInitializedError extends Error {
   constructor() {
     super("Embedder not initialized. Call init() first.");
     this.name = "EmbedderNotInitializedError";
   }
+}
+
+/** Error thrown when embedding provider configuration is invalid. */
+export class EmbeddingConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "EmbeddingConfigError";
+  }
+}
+
+function resolveEmbeddingProvider(rawProvider: string | undefined): EmbeddingProvider {
+  const provider = rawProvider?.trim().toLowerCase();
+  if (!provider) return DEFAULT_EMBEDDING_PROVIDER;
+  if (provider === "local" || provider === "openai") return provider;
+  throw new EmbeddingConfigError(
+    `Unsupported EMBEDDING_PROVIDER '${rawProvider}'. Expected 'local' or 'openai'.`,
+  );
+}
+
+function ensureUrlHasTrailingSlash(value: string): string {
+  return value.endsWith("/") ? value : `${value}/`;
+}
+
+function toEmbeddingVector(values: unknown): Float32Array {
+  if (!Array.isArray(values) || values.length === 0) {
+    throw new Error("[MCP] Invalid embeddings API response: missing embedding vector.");
+  }
+
+  const normalized = values.map((value) => {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+      throw new Error(
+        "[MCP] Invalid embeddings API response: embedding contains non-numeric values.",
+      );
+    }
+    return numericValue;
+  });
+
+  return new Float32Array(normalized);
 }
 
 /**
@@ -21,11 +65,18 @@ export class EmbedderNotInitializedError extends Error {
  */
 export class Embeddings {
   private readonly modelName: string;
+  private readonly provider: EmbeddingProvider;
+  private readonly apiBaseUrl: string | null;
+  private readonly apiKey: string | null;
   private embedder: FeatureExtractionPipeline | null = null;
+  private initialized = false;
 
   public constructor(modelName?: string) {
+    this.provider = resolveEmbeddingProvider(process.env.EMBEDDING_PROVIDER);
     // Resolution precedence: explicit ctor arg > MODEL_NAME env var > default model
     this.modelName = modelName?.trim() || process.env.MODEL_NAME?.trim() || DEFAULT_EMBEDDING_MODEL;
+    this.apiBaseUrl = process.env.EMBEDDING_API_BASE_URL?.trim() || null;
+    this.apiKey = process.env.EMBEDDING_API_KEY?.trim() || null;
   }
 
   /** @returns Resolved (possibly defaulted) underlying model identifier. */
@@ -33,14 +84,83 @@ export class Embeddings {
     return this.modelName;
   }
 
+  /** @returns Stable provider/model identity for persistence compatibility checks. */
+  public getModelIdentity(): string {
+    return `${this.provider}:${this.modelName}`;
+  }
+
+  private getApiEmbeddingsEndpoint(): URL {
+    if (!this.apiBaseUrl) {
+      throw new EmbeddingConfigError(
+        "EMBEDDING_API_BASE_URL is required when EMBEDDING_PROVIDER=openai.",
+      );
+    }
+
+    try {
+      return new URL("embeddings", ensureUrlHasTrailingSlash(this.apiBaseUrl));
+    } catch {
+      throw new EmbeddingConfigError(
+        `EMBEDDING_API_BASE_URL must be a valid URL. Received '${this.apiBaseUrl}'.`,
+      );
+    }
+  }
+
+  private validateApiConfiguration(): void {
+    this.getApiEmbeddingsEndpoint();
+    if (!this.apiKey) {
+      throw new EmbeddingConfigError(
+        "EMBEDDING_API_KEY is required when EMBEDDING_PROVIDER=openai.",
+      );
+    }
+  }
+
   /** Lazily initialize the underlying embedding pipeline (idempotent). */
   public async init(): Promise<void> {
-    if (this.embedder) return; // already initialized
+    if (this.initialized) return;
+
+    if (this.provider === "openai") {
+      this.validateApiConfiguration();
+      console.error(`[MCP] Using embeddings API: ${this.getApiEmbeddingsEndpoint().toString()}`);
+      console.error(`[MCP] Remote embedding model configured: ${this.modelName}`);
+      this.initialized = true;
+      return;
+    }
+
     console.error(`[MCP] Loading embedding model: ${this.modelName}`);
     this.embedder = (await (pipeline as any)("feature-extraction", this.modelName, {
       dtype: "q8", // Use quantized model for smaller download size
     })) as FeatureExtractionPipeline;
     console.error(`[MCP] Model ready: ${this.modelName}`);
+    this.initialized = true;
+  }
+
+  private async embedViaApi(text: string): Promise<Float32Array> {
+    const response = await fetch(this.getApiEmbeddingsEndpoint(), {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: this.modelName,
+        input: text,
+        encoding_format: "float",
+      }),
+    });
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => response.statusText);
+      throw new Error(
+        `[MCP] Embeddings API request failed (${response.status} ${response.statusText}): ${detail.slice(0, 400)}`,
+      );
+    }
+
+    const payload = (await response.json()) as {
+      data?: Array<{
+        embedding?: unknown;
+      }>;
+    };
+    return toEmbeddingVector(payload.data?.[0]?.embedding);
   }
 
   /**
@@ -54,8 +174,14 @@ export class Embeddings {
    * @throws {EmptyTextError} If text is empty or whitespace-only.
    */
   public async embed(text: string): Promise<Float32Array> {
-    if (!this.embedder) throw new EmbedderNotInitializedError();
+    if (!this.initialized) throw new EmbedderNotInitializedError();
     const trimmed = text.trim();
+
+    if (this.provider === "openai") {
+      return await this.embedViaApi(trimmed);
+    }
+
+    if (!this.embedder) throw new EmbedderNotInitializedError();
     const output = await this.embedder(trimmed, { pooling: "mean", normalize: true });
     return output.data as Float32Array;
   }

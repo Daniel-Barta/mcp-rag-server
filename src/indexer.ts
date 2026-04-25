@@ -234,7 +234,7 @@ export class Indexer {
           storePath: this.storePath,
           chunkSize: this.chunkSize,
           chunkOverlap: this.chunkOverlap,
-          modelName: this.embeddings.getModelName(),
+          modelName: this.embeddings.getModelIdentity(),
           verbose: this.verbose,
         })
       : null;
@@ -248,7 +248,7 @@ export class Indexer {
           docs: this.docs,
           chunkSize: this.chunkSize,
           chunkOverlap: this.chunkOverlap,
-          modelName: this.embeddings.getModelName(),
+          modelName: this.embeddings.getModelIdentity(),
           verbose: this.verbose,
         });
       }
@@ -314,7 +314,7 @@ export class Indexer {
         docs: this.docs,
         chunkSize: this.chunkSize,
         chunkOverlap: this.chunkOverlap,
-        modelName: this.embeddings.getModelName(),
+        modelName: this.embeddings.getModelIdentity(),
         verbose: this.verbose,
       });
     }

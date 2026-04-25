@@ -31,10 +31,14 @@
  *  - CHUNK_SIZE           Max characters per text chunk (default 800, hard cap 8000).
  *  - CHUNK_OVERLAP        Overlap characters between adjacent chunks (default 120).
  *  - FOLDER_INFO_NAME     Display name used in tool descriptions (default 'REPO_ROOT').
+ *  - EMBEDDING_PROVIDER   'local' (default) or 'openai' for an OpenAI-compatible API.
  *  - INDEX_STORE_PATH     If set, path to persist / reload serialized index artifacts.
  *  - DOCS_PER_FILE        Max documents per JSON file for persistence (default 10000, min 100).
  *  - MCP_TRANSPORT        'stdio' (default) or 'http'.
- *  - TRANSFORMERS_CACHE   Directory for model downloads (set by Embeddings.configureCache()).
+ *  - MODEL_NAME           Local HF model name or remote /embeddings model id.
+ *  - EMBEDDING_API_BASE_URL Base URL for the OpenAI-compatible embeddings API.
+ *  - EMBEDDING_API_KEY    Bearer token for the OpenAI-compatible embeddings API.
+ *  - TRANSFORMERS_CACHE   Directory for local model downloads.
  *
  * NOTE: This file intentionally keeps business logic thin; heavy lifting is delegated
  * to Embeddings + Indexer. That separation simplifies future swaps (different models,
