@@ -109,6 +109,7 @@ Notes:
 
 - `EMBEDDING_API_BASE_URL` should point to the provider's API base (for example `https://api.openai.com/v1`), not the `/embeddings` path itself.
 - `MODEL_NAME` is passed verbatim to the remote embeddings API when `EMBEDDING_PROVIDER=openai`.
+- `EMBEDDING_API_BATCH_SIZE` controls how many chunks are sent per remote embeddings request during indexing. Default: `32`.
 - `TRANSFORMERS_CACHE` is only relevant for local inference.
 
 ### Streamable HTTP mode (recommended for large initial indexes)

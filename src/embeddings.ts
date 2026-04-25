@@ -3,6 +3,12 @@ import { pipeline, FeatureExtractionPipeline } from "@huggingface/transformers";
 /** Small epsilon value to prevent division by zero in cosine similarity. */
 const COSINE_EPSILON = 1e-10;
 
+/** Default number of inputs to send in one OpenAI-compatible embeddings request. */
+const DEFAULT_OPENAI_EMBEDDING_BATCH_SIZE = 32;
+
+/** Placeholder sent when a trimmed input is empty and the remote API rejects blank strings. */
+const EMPTY_OPENAI_EMBEDDING_INPUT_PLACEHOLDER = " ";
+
 /** Default embedding model used when none is specified. */
 export const DEFAULT_EMBEDDING_MODEL = "jinaai/jina-embeddings-v2-base-code";
 
@@ -40,6 +46,25 @@ function ensureUrlHasTrailingSlash(value: string): string {
   return value.endsWith("/") ? value : `${value}/`;
 }
 
+function resolveOpenAiBatchSize(rawValue: string | undefined): number {
+  if (!rawValue?.trim()) {
+    return DEFAULT_OPENAI_EMBEDDING_BATCH_SIZE;
+  }
+
+  const parsed = Number.parseInt(rawValue, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new EmbeddingConfigError(
+      `EMBEDDING_API_BATCH_SIZE must be a positive integer. Received '${rawValue}'.`,
+    );
+  }
+
+  return parsed;
+}
+
+function normalizeOpenAiEmbeddingInput(text: string): string {
+  return text.length > 0 ? text : EMPTY_OPENAI_EMBEDDING_INPUT_PLACEHOLDER;
+}
+
 function toEmbeddingVector(values: unknown): Float32Array {
   if (!Array.isArray(values) || values.length === 0) {
     throw new Error("[MCP] Invalid embeddings API response: missing embedding vector.");
@@ -58,6 +83,56 @@ function toEmbeddingVector(values: unknown): Float32Array {
   return new Float32Array(normalized);
 }
 
+function toEmbeddingVectors(
+  data: Array<{
+    embedding?: unknown;
+    index?: unknown;
+  }>,
+  expectedCount: number,
+): Float32Array[] {
+  if (data.length !== expectedCount) {
+    throw new Error(
+      `[MCP] Invalid embeddings API response: expected ${expectedCount} embeddings, received ${data.length}.`,
+    );
+  }
+
+  const vectors = new Array<Float32Array>(expectedCount);
+  let nextSequentialIndex = 0;
+
+  for (const item of data) {
+    const responseIndex = Number(item.index);
+    let targetIndex: number;
+    if (
+      Number.isInteger(responseIndex) &&
+      responseIndex >= 0 &&
+      responseIndex < expectedCount &&
+      !vectors[responseIndex]
+    ) {
+      targetIndex = responseIndex;
+    } else {
+      while (nextSequentialIndex < expectedCount && vectors[nextSequentialIndex]) {
+        nextSequentialIndex++;
+      }
+      targetIndex = nextSequentialIndex;
+    }
+
+    if (targetIndex >= expectedCount) {
+      throw new Error("[MCP] Invalid embeddings API response: duplicate embedding index.");
+    }
+
+    vectors[targetIndex] = toEmbeddingVector(item.embedding);
+    if (targetIndex === nextSequentialIndex) {
+      nextSequentialIndex++;
+    }
+  }
+
+  if (vectors.some((vector) => !vector)) {
+    throw new Error("[MCP] Invalid embeddings API response: missing embedding entries.");
+  }
+
+  return vectors;
+}
+
 /**
  * Encapsulates embedding model initialization and helper utilities for
  * generating embeddings + computing cosine similarity.
@@ -68,6 +143,7 @@ export class Embeddings {
   private readonly provider: EmbeddingProvider;
   private readonly apiBaseUrl: string | null;
   private readonly apiKey: string | null;
+  private readonly apiBatchSize: number;
   private embedder: FeatureExtractionPipeline | null = null;
   private initialized = false;
 
@@ -77,6 +153,7 @@ export class Embeddings {
     this.modelName = modelName?.trim() || process.env.MODEL_NAME?.trim() || DEFAULT_EMBEDDING_MODEL;
     this.apiBaseUrl = process.env.EMBEDDING_API_BASE_URL?.trim() || null;
     this.apiKey = process.env.EMBEDDING_API_KEY?.trim() || null;
+    this.apiBatchSize = resolveOpenAiBatchSize(process.env.EMBEDDING_API_BATCH_SIZE);
   }
 
   /** @returns Resolved (possibly defaulted) underlying model identifier. */
@@ -87,6 +164,11 @@ export class Embeddings {
   /** @returns Stable provider/model identity for persistence compatibility checks. */
   public getModelIdentity(): string {
     return `${this.provider}:${this.modelName}`;
+  }
+
+  /** @returns Recommended request batch size for indexing operations. */
+  public getBatchSize(): number {
+    return this.provider === "openai" ? this.apiBatchSize : 1;
   }
 
   private getApiEmbeddingsEndpoint(): URL {
@@ -122,6 +204,7 @@ export class Embeddings {
       this.validateApiConfiguration();
       console.error(`[MCP] Using embeddings API: ${this.getApiEmbeddingsEndpoint().toString()}`);
       console.error(`[MCP] Remote embedding model configured: ${this.modelName}`);
+      console.error(`[MCP] Remote embedding batch size: ${this.apiBatchSize}`);
       this.initialized = true;
       return;
     }
@@ -134,7 +217,8 @@ export class Embeddings {
     this.initialized = true;
   }
 
-  private async embedViaApi(text: string): Promise<Float32Array> {
+  private async embedViaApiBatch(texts: string[]): Promise<Float32Array[]> {
+    const normalizedTexts = texts.map(normalizeOpenAiEmbeddingInput);
     const response = await fetch(this.getApiEmbeddingsEndpoint(), {
       method: "POST",
       headers: {
@@ -143,7 +227,7 @@ export class Embeddings {
       },
       body: JSON.stringify({
         model: this.modelName,
-        input: text,
+        input: normalizedTexts,
         encoding_format: "float",
       }),
     });
@@ -158,9 +242,18 @@ export class Embeddings {
     const payload = (await response.json()) as {
       data?: Array<{
         embedding?: unknown;
+        index?: unknown;
       }>;
     };
-    return toEmbeddingVector(payload.data?.[0]?.embedding);
+    return toEmbeddingVectors(payload.data ?? [], normalizedTexts.length);
+  }
+
+  private async embedViaApi(text: string): Promise<Float32Array> {
+    const [embedding] = await this.embedViaApiBatch([text]);
+    if (!embedding) {
+      throw new Error("[MCP] Invalid embeddings API response: missing embedding vector.");
+    }
+    return embedding;
   }
 
   /**
@@ -184,6 +277,34 @@ export class Embeddings {
     if (!this.embedder) throw new EmbedderNotInitializedError();
     const output = await this.embedder(trimmed, { pooling: "mean", normalize: true });
     return output.data as Float32Array;
+  }
+
+  /**
+   * Compute embeddings for multiple text strings. OpenAI-compatible providers are
+   * called in request batches; local inference falls back to the existing
+   * single-item path to preserve current behavior.
+   */
+  public async embedMany(texts: string[]): Promise<Float32Array[]> {
+    if (!this.initialized) throw new EmbedderNotInitializedError();
+    if (texts.length === 0) return [];
+
+    const trimmedTexts = texts.map((text) => text.trim());
+
+    if (this.provider === "openai") {
+      const embeddings: Float32Array[] = [];
+      for (let i = 0; i < trimmedTexts.length; i += this.apiBatchSize) {
+        embeddings.push(
+          ...(await this.embedViaApiBatch(trimmedTexts.slice(i, i + this.apiBatchSize))),
+        );
+      }
+      return embeddings;
+    }
+
+    const embeddings: Float32Array[] = [];
+    for (const text of trimmedTexts) {
+      embeddings.push(await this.embed(text));
+    }
+    return embeddings;
   }
 
   /**

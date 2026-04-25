@@ -38,6 +38,7 @@
  *  - MODEL_NAME           Local HF model name or remote /embeddings model id.
  *  - EMBEDDING_API_BASE_URL Base URL for the OpenAI-compatible embeddings API.
  *  - EMBEDDING_API_KEY    Bearer token for the OpenAI-compatible embeddings API.
+ *  - EMBEDDING_API_BATCH_SIZE Number of chunks to send per remote embeddings request (default 32).
  *  - TRANSFORMERS_CACHE   Directory for local model downloads.
  *
  * NOTE: This file intentionally keeps business logic thin; heavy lifting is delegated

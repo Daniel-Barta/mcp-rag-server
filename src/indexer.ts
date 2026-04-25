@@ -219,6 +219,38 @@ export class Indexer {
   }
 
   /**
+   * Generate embeddings for a list of docs, using provider-specific batching when available.
+   */
+  private async embedDocs(docs: Doc[], totalDocs = docs.length): Promise<void> {
+    const batchSize = Math.max(1, this.embeddings.getBatchSize());
+
+    for (let i = 0; i < docs.length; i += batchSize) {
+      if (i % 200 === 0) console.error(`[MCP] Embedding ${i}/${totalDocs}`);
+      if (this.verbose && i % 50 === 0) {
+        const pct = ((i / Math.max(1, totalDocs)) * 100).toFixed(1);
+        console.error(`[MCP][verbose] Embedding progress: ${i}/${totalDocs} (${pct}%)`);
+      }
+
+      const batch = docs.slice(i, i + batchSize);
+      const embeddings = await this.embeddings.embedMany(batch.map((doc) => doc.text));
+
+      if (embeddings.length !== batch.length) {
+        throw new Error(
+          `[MCP] Embedding provider returned ${embeddings.length} vectors for ${batch.length} docs.`,
+        );
+      }
+
+      for (let batchIndex = 0; batchIndex < batch.length; batchIndex++) {
+        const doc = batch[batchIndex];
+        const emb = embeddings[batchIndex];
+        if (!doc || !emb) continue;
+        doc.emb = emb;
+        statusManager.incEmbedded();
+      }
+    }
+  }
+
+  /**
    * Perform a full corpus (re)build: discover files, load contents, chunk, and
    * generate embeddings sequentially. Existing state is cleared first. Errors
    * reading individual files are intentionally swallowed to maximize coverage.
@@ -294,17 +326,7 @@ export class Indexer {
     );
     statusManager.setIndexTotals(fileInfos.length, this.docs.length);
 
-    for (let i = 0; i < this.docs.length; i++) {
-      const doc = this.docs[i];
-      if (!doc) continue; // Should never happen, but satisfies strict type checking
-      if (i % 200 === 0) console.error(`[MCP] Embedding ${i}/${this.docs.length}`);
-      if (this.verbose && i % 50 === 0) {
-        const pct = ((i / Math.max(1, this.docs.length)) * 100).toFixed(1);
-        console.error(`[MCP][verbose] Embedding progress: ${i}/${this.docs.length} (${pct}%)`);
-      }
-      doc.emb = await this.embeddings.embed(doc.text);
-      statusManager.incEmbedded();
-    }
+    await this.embedDocs(this.docs, this.docs.length);
     console.error(`[MCP] Embeddings ready.`);
     statusManager.markReady();
     this.built = true;
@@ -489,22 +511,21 @@ export class Indexer {
 
       const chunks = Indexer.splitChunks(content, this.chunkSize, this.chunkOverlap);
       const lineCount = content.split(/\r?\n/).length;
-      for (let idx = 0; idx < chunks.length; idx++) {
-        const text = chunks[idx];
-        if (!text) continue; // Should never happen, but satisfies strict type checking
-        const emb = await this.embeddings.embed(text);
-        this.docs.push({
-          id: `${idCounter++}`,
-          path: file.rel,
-          chunk: idx,
-          text,
-          fileSize: file.size,
-          lineCount,
-          emb,
-        });
-        statusManager.incEmbedded();
-        embeddedChunks++;
+      const newDocs: Doc[] = chunks.map((text, idx) => ({
+        id: `${idCounter + idx}`,
+        path: file.rel,
+        chunk: idx,
+        text,
+        fileSize: file.size,
+        lineCount,
+      }));
+
+      await this.embedDocs(newDocs, newDocs.length);
+      for (const doc of newDocs) {
+        this.docs.push(doc);
       }
+      idCounter += newDocs.length;
+      embeddedChunks += newDocs.length;
     }
     statusManager.setIndexTotals(currentMap.size, this.docs.length);
     // Pre-existing docs lacked embedded increment counts: credit them now.
