@@ -26,7 +26,7 @@ Two transports are supported (select with `MCP_TRANSPORT=stdio|http`):
 - Incremental change detection (additions / deletions / file size changes) to avoid full rebuilds
 - Stdio or Streamable HTTP transport (with optional host allow‑list / DNS rebinding protection)
 - Safe path handling (rejects attempts to escape `REPO_ROOT`)
-- Minimal dependencies; quick startup after first local model load or remote API validation
+- Minimal dependencies; quick startup after first local model load or remote API configuration validation
 - Ready for extension: add new MCP tools or ANN / hybrid retrieval backends
 
 Planned / Nice‑to‑have: hybrid BM25 + embedding search, ANN acceleration (HNSW / IVF), per‑language tokenizer heuristics, batched / parallel embedding, semantic boundary aware chunking.
@@ -345,7 +345,7 @@ Benefits:
 Current limitations:
 
 - Change detection uses file size only (content edits keeping identical size won't re‑embed yet).
-- Embedding generation is sequential (no parallel batching yet).
+- Embedding generation is not parallelized yet; OpenAI‑compatible providers support request batching, but local embeddings still run one chunk at a time.
 - Store schema is minimal (version 1); future versions may add hashing or mtime heuristics.
 
 Force a full rebuild by deleting the manifest file (`<INDEX_STORE_PATH>.manifest.json`) and data files (`<INDEX_STORE_PATH>.part*.json`) or changing chunk/model/provider parameters.

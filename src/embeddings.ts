@@ -226,7 +226,10 @@ export class Embeddings {
       return embedding!;
     }
 
-    const output = await this.embedder!(trimmed, { pooling: "mean", normalize: true });
+    const output = await this.embedder!(trimmed.length > 0 ? trimmed : " ", {
+      pooling: "mean",
+      normalize: true,
+    });
     return output.data as Float32Array;
   }
 

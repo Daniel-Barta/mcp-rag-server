@@ -243,7 +243,11 @@ export class Indexer {
       for (let batchIndex = 0; batchIndex < batch.length; batchIndex++) {
         const doc = batch[batchIndex];
         const emb = embeddings[batchIndex];
-        if (!doc || !emb) continue;
+        if (!doc || !emb) {
+          throw new Error(
+            `[MCP] Missing batch item during embedding assignment at absolute index ${i + batchIndex} (batch index ${batchIndex}).`,
+          );
+        }
         doc.emb = emb;
         statusManager.incEmbedded();
       }
