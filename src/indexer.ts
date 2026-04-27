@@ -56,9 +56,9 @@ export interface BuildIndexOptions {
   embeddings: Embeddings;
   /** Enable additional progress logging to stderr */
   verbose?: boolean;
-  /** Characters per chunk (default 800). Larger => fewer vectors, less locality */
+  /** Characters per chunk (default 2400). Larger => fewer vectors, less locality */
   chunkSize?: number;
-  /** Trailing character overlap between consecutive chunks (default 120) */
+  /** Trailing character overlap between consecutive chunks (default 400) */
   chunkOverlap?: number;
   /** Optional JSON persistence path (for warm start / incremental updates) */
   storePath?: string;
@@ -114,10 +114,10 @@ export class Indexer {
     this.excludedFolders = opts.excludedFolders ?? [];
     this.embeddings = opts.embeddings;
     this.verbose = !!opts.verbose;
-    this.chunkSize = opts.chunkSize ?? 800;
+    this.chunkSize = opts.chunkSize ?? 2400;
     // Resolve requested overlap then clamp if invalid (must be < chunk size). We compute
     // final value up-front so the property can remain readonly (no later mutation).
-    const requestedOverlap = opts.chunkOverlap ?? 120;
+    const requestedOverlap = opts.chunkOverlap ?? 400;
     this.chunkOverlap =
       requestedOverlap >= this.chunkSize
         ? Math.max(0, Math.floor(this.chunkSize * 0.15)) // conservative fallback (~15%)
@@ -197,12 +197,12 @@ export class Indexer {
    * chunk boundaries for embedding similarity.
    *
    * @param text Full input string to divide.
-   * @param size Target maximum characters per chunk (default 800).
+  * @param size Target maximum characters per chunk (default 2400).
    * @param overlap Number of characters of trailing overlap to retain from the
-   * previous chunk (default 120). Must be < size for forward progress.
+  * previous chunk (default 400). Must be < size for forward progress.
    * @returns Ordered list of chunk strings.
    */
-  public static splitChunks(text: string, size = 800, overlap = 120): string[] {
+  public static splitChunks(text: string, size = 2400, overlap = 400): string[] {
     // NOTE: This splitter is intentionally naïve (pure character length). For
     // better semantic coherence consider: token-aware splitting (tiktoken),
     // markdown / code block boundary detection, or AST / LSP assisted segmenting.

@@ -2,7 +2,7 @@
 
 `mcp-rag-server` is a lightweight Retrieval‑Augmented Generation helper you can plug into **any client that speaks the [Model Context Protocol (MCP)]**. GitHub Copilot Agent mode in Visual Studio / VS Code is just one option – you can also use the official MCP Inspector, future MCP‑aware IDEs, or custom tooling.
 
-It indexes a target repository directory, chunks the content (default chunk size **800** chars with **120** char overlap – both configurable via `CHUNK_SIZE` / `CHUNK_OVERLAP`), builds embeddings using either **local inference** via `@huggingface/transformers` or an **OpenAI‑compatible embeddings API**, and exposes MCP tools:
+It indexes a target repository directory, chunks the content (default chunk size **2400** characters, about **800** tokens, with **400** characters of overlap, about **120** tokens; both configurable via `CHUNK_SIZE` / `CHUNK_OVERLAP`), builds embeddings using either **local inference** via `@huggingface/transformers` or an **OpenAI‑compatible embeddings API**, and exposes MCP tools:
 
 - `rag_query` – semantic search returning scored snippets (path, score, snippet)
 - `read_file` – secure file read (optional line range) constrained to `REPO_ROOT`. For PDF files, text is automatically retrieved from the unified cache file if available
@@ -316,11 +316,11 @@ Supported variables:
 - `MCP_PORT` (optional, HTTP mode): TCP port (default `3000`).
 - `ENABLE_DNS_REBINDING_PROTECTION` (optional, HTTP mode): defaults to `true`; set to `false` to disable host allow‑list checks.
 - `ALLOWED_HOSTS` (optional, HTTP mode): comma-separated list of hosts allowed when DNS rebinding protection is enabled. Defaults include localhost and 127.0.0.1 with/without port.
-- `CHUNK_SIZE` (optional): maximum characters per chunk before embedding (default 800). Larger values reduce total embeddings (faster build, less memory) but can blur fine-grained matches. Typical ranges:
-  - 700‑900 (balanced default)
-  - 1000‑1400 (large prose / long functions; fewer vectors)
-  - 400‑600 (fine‑grained code navigation; more vectors / memory)
-- `CHUNK_OVERLAP` (optional): trailing characters carried into the next chunk (default 120 ≈ 15%). Recommended 10‑20% of `CHUNK_SIZE` (e.g., 80‑160 for an 800 size). Increase slightly (up to ~20‑25%) if you observe answers missing cross‑boundary context; decrease to speed up builds.
+- `CHUNK_SIZE` (optional): maximum characters per chunk before embedding (default 2400, roughly 800 tokens depending on tokenizer/model). Larger values reduce total embeddings (faster build, less memory) but can blur fine-grained matches. Typical ranges:
+	- 2100‑2700 (roughly 700‑900 tokens; balanced default)
+	- 3000‑4200 (roughly 1000‑1400 tokens; large prose / long functions; fewer vectors)
+	- 1200‑1800 (roughly 400‑600 tokens; fine‑grained code navigation; more vectors / memory)
+- `CHUNK_OVERLAP` (optional): trailing characters carried into the next chunk (default 400, roughly 120 tokens or about 15% of the default chunk size). Recommended 10‑20% of `CHUNK_SIZE` (for example 240‑540 when `CHUNK_SIZE=2400`). Increase slightly (up to ~20‑25%) if you observe answers missing cross‑boundary context; decrease to speed up builds.
 
 Safety caps: `CHUNK_SIZE` is clamped to 8000 and `CHUNK_OVERLAP` to 4000; if overlap >= size it's automatically reduced (logged) to preserve forward progress.
 
@@ -404,11 +404,11 @@ Feel free to experiment—swap via `MODEL_NAME` and rebuild the embedding cache 
 
 ### Chunk sizing guidance
 
-Why 800 / 120? Empirically this keeps most self‑contained code constructs (functions/classes) and short doc sections in a single chunk while providing enough continuity for cross‑block semantic matches. Adjust based on corpus:
+Why ~800 / 120 tokens? The implementation chunks by characters, so the defaults are 2400 / 400 characters, which is roughly 800 / 120 tokens for typical code and prose. Empirically this keeps most self‑contained code constructs (functions/classes) and short doc sections in a single chunk while providing enough continuity for cross‑block semantic matches. Adjust based on corpus:
 
 - Mostly short functions or config files: smaller chunks (500‑700) aid pinpoint retrieval.
 - Large narrative docs / design specs: larger chunks (1000‑1400) reduce vector count without much recall loss.
-- Heavily interdependent code where context spans multiple files: keep default or modestly raise overlap (to ~160) rather than shrinking size.
+- Heavily interdependent code where context spans multiple files: keep default or modestly raise overlap (to ~500‑600 characters) rather than shrinking size.
 
 Rule of thumb: Overlap ≈ 15% of size. Avoid overlap >= size (auto‑corrected) and avoid extremely small sizes (<300) unless you have a downstream re‑ranking stage.
 

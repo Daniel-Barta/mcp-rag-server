@@ -28,8 +28,8 @@
  *  - ALLOWED_EXT          Comma list of file extensions to include (no leading dots).
  *  - EXCLUDED_FOLDERS     Comma list of folder names to skip during indexing.
  *  - VERBOSE              If '1'/'true'/etc enables extra logging during indexing.
- *  - CHUNK_SIZE           Max characters per text chunk (default 800, hard cap 8000).
- *  - CHUNK_OVERLAP        Overlap characters between adjacent chunks (default 120).
+ *  - CHUNK_SIZE           Max characters per text chunk (default 2400, hard cap 8000).
+ *  - CHUNK_OVERLAP        Overlap characters between adjacent chunks (default 400).
  *  - FOLDER_INFO_NAME     Display name used in tool descriptions (default 'REPO_ROOT').
  *  - EMBEDDING_PROVIDER   'local' (default) or 'openai' for an OpenAI-compatible API.
  *  - INDEX_STORE_PATH     If set, path to persist / reload serialized index artifacts.
