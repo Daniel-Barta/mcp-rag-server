@@ -33,14 +33,22 @@ Planned / Nice‑to‑have: hybrid BM25 + embedding search, ANN acceleration (HN
 
 ## Requirements
 
-- Node.js 18+
-- Visual Studio 2022 17.14+ with GitHub Copilot (Agent mode enabled)
+- Node.js 20+
 - Path to your repository (`REPO_ROOT`)
+
+Optional MCP clients (any one is enough):
+
+- The official [MCP Inspector](https://github.com/modelcontextprotocol/inspector)
+- Visual Studio 2022 17.14+ with GitHub Copilot (Agent mode enabled)
+- VS Code with GitHub Copilot Agent mode
+- Any other MCP-aware tooling
 
 ## Install
 
+```bash
 npm install
 npm run build
+```
 
 ## Run (local test)
 
@@ -48,34 +56,37 @@ Build then start (stdio transport by default). Use either `npm start` or invoke 
 
 ### Windows PowerShell
 
-```
+```powershell
 npm run build
 $env:REPO_ROOT="C:\path\to\your-repo"; node dist/index.js
 ```
 
 Or:
 
-```
+```powershell
 $env:REPO_ROOT="C:\path\to\your-repo"; npm start
 ```
 
 ### macOS / Linux (bash/zsh)
 
-```
+```bash
 npm run build
 export REPO_ROOT="/path/to/your-repo"; node dist/index.js
 ```
 
 Or:
 
-```
+```bash
 export REPO_ROOT="/path/to/your-repo"; npm start
 ```
 
 Optionally set a model cache to speed up subsequent runs (first start downloads the model once):
 
-```
+```bash
 export TRANSFORMERS_CACHE="/path/to/cache"   # macOS/Linux
+```
+
+```powershell
 $env:TRANSFORMERS_CACHE="C:\path\to\cache" # Windows PowerShell
 ```
 
@@ -90,7 +101,7 @@ $env:REPO_ROOT="C:\path\to\your-repo"
 $env:EMBEDDING_PROVIDER="openai"
 $env:EMBEDDING_API_BASE_URL="https://api.openai.com/v1"
 $env:EMBEDDING_API_KEY="<your-api-key>"
-$env:MODEL_NAME="text-embedding-3-large"
+$env:MODEL_NAME="text-embedding-3-small"
 npm start
 ```
 
@@ -101,7 +112,7 @@ export REPO_ROOT="/path/to/your-repo"
 export EMBEDDING_PROVIDER="openai"
 export EMBEDDING_API_BASE_URL="https://api.openai.com/v1"
 export EMBEDDING_API_KEY="<your-api-key>"
-export MODEL_NAME="text-embedding-3-large"
+export MODEL_NAME="text-embedding-3-small"
 npm start
 ```
 
@@ -116,18 +127,18 @@ Notes:
 
 Run the MCP server as an HTTP endpoint and only open your IDE after `Embeddings ready.` shows (avoids client timeouts on cold start):
 
-```
+```powershell
 npm run build
 $env:REPO_ROOT="C:\path\to\your-repo"; $env:MCP_TRANSPORT="http"; npm start
 ```
 
-```
+```bash
 export REPO_ROOT="/path/to/your-repo"; MCP_TRANSPORT=http npm start
 ```
 
 Default HTTP bind: http://127.0.0.1:3000/mcp. Override with `HOST` and `MCP_PORT` envs. A readiness endpoint is available at `http://127.0.0.1:3000/health` returning JSON like:
 
-```
+```json
 {
 	"version": "0.x.y",
 	"repoRoot": "C:/abs/path",
@@ -156,6 +167,7 @@ Notes:
 
 ### Linting & Formatting
 
+- Type-check (no emit): `npm run typecheck`
 - Run ESLint (check): `npm run lint`
 - Auto-fix ESLint issues: `npm run lint:fix`
 - Format with Prettier: `npm run format`
@@ -167,28 +179,28 @@ Use the MCP Inspector to exercise the server locally and try the tools without V
 
 Windows PowerShell:
 
-```
+```powershell
 npm run build
 $env:REPO_ROOT="C:\path\to\your-repo"; npx @modelcontextprotocol/inspector node .\\dist\\index.js
 ```
 
 Streamable HTTP via Inspector (Windows):
 
-```
+```powershell
 npm run build
 $env:REPO_ROOT="C:\path\to\your-repo"; $env:MCP_TRANSPORT="http"; npx @modelcontextprotocol/inspector http://localhost:3000/mcp --transport http
 ```
 
 macOS/Linux (bash/zsh):
 
-```
+```bash
 export REPO_ROOT="/path/to/your-repo"
 npx @modelcontextprotocol/inspector node dist/index.js
 ```
 
 Streamable HTTP (macOS/Linux):
 
-```
+```bash
 export REPO_ROOT="/path/to/your-repo"; MCP_TRANSPORT=http npx @modelcontextprotocol/inspector http://localhost:3000/mcp --transport http
 ```
 
@@ -271,7 +283,7 @@ Troubleshooting
 - Slow startup: set `TRANSFORMERS_CACHE` to a fast local folder and (optionally) set `ALLOWED_EXT` (e.g., `ts,tsx,js` for TypeScript/JS only, or any list you need).
 - Path errors: `path` must be relative to `REPO_ROOT`. Absolute paths are rejected for safety.
 - Nothing appears in Inspector for minutes: the server is still initializing (model download + embedding). This is expected on first run.
-  .- Slow warm restarts: provide `INDEX_STORE_PATH` so embeddings persist and only changed files re‑embed.
+- Slow warm restarts: provide `INDEX_STORE_PATH` so embeddings persist and only changed files re‑embed.
 
 ## Environment configuration (.env)
 
@@ -318,11 +330,11 @@ Safety caps: `CHUNK_SIZE` is clamped to 8000 and `CHUNK_OVERLAP` to 4000; if ove
 
 Set `INDEX_STORE_PATH` to enable a persisted index storing chunks + embeddings across multiple JSON files. On startup:
 
-1. If the manifest file exists (`.manifest.json`) and its metadata (model name, chunk size, overlap) matches, the index is loaded from the data files referenced in the manifest.
+1. If the manifest file exists (`<INDEX_STORE_PATH>.manifest.json`) and its metadata (model name, chunk size, overlap) matches, the index is loaded from the data files referenced in the manifest.
 2. The repository is rescanned; removed files' chunks are discarded, and new or size‑changed files are re‑chunked & re‑embedded.
 3. The merged index is saved back to disk (cold build path also persists when configured).
 
-The manifest file contains metadata about the index (version, chunk parameters, model name, timestamp) and a list of all data files (`.part####.json`) that comprise the full index.
+The manifest file contains metadata about the index (version, chunk parameters, model name, timestamp) and a list of all data files (`<INDEX_STORE_PATH>.part####.json`) that comprise the full index.
 
 Benefits:
 
@@ -335,7 +347,7 @@ Current limitations:
 - Embedding generation is sequential (no parallel batching yet).
 - Store schema is minimal (version 1); future versions may add hashing or mtime heuristics.
 
-Force a full rebuild by deleting the manifest file (`.manifest.json`) and data files (`.part*.json`) or changing chunk/model/provider parameters.
+Force a full rebuild by deleting the manifest file (`<INDEX_STORE_PATH>.manifest.json`) and data files (`<INDEX_STORE_PATH>.part*.json`) or changing chunk/model/provider parameters.
 
 ## Visual Studio integration (MCP)
 
@@ -348,13 +360,13 @@ Adjust the paths in "command"/"args" and the `REPO_ROOT` env.
 
 For Streamable HTTP, use a config entry like:
 
-```
+```json
 {
-	"servers": {
-		"mcp-rag-server": {
-			"url": "http://127.0.0.1:3000/mcp"
-		}
-	}
+  "servers": {
+    "mcp-rag-server": {
+      "url": "http://127.0.0.1:3000/mcp"
+    }
+  }
 }
 ```
 
@@ -373,16 +385,22 @@ Sample prompt:
 
 ### Model selection guidance
 
-Choose an embedding setup based on your repository characteristics:
+Choose an embedding setup based on your repository characteristics. There are two orthogonal choices: **provider** and **model**.
 
-- `EMBEDDING_PROVIDER=local` with `jinaai/jina-embeddings-v2-base-code` (default): Use when you want a fully local workflow after the initial model download and your corpus contains a meaningful amount of source code mixed with README / design docs.
-- `EMBEDDING_PROVIDER=openai`: Use when you want a hosted embeddings service, centralized credentials, or a provider-specific managed model exposed through an OpenAI-compatible API.
+**Provider** (`EMBEDDING_PROVIDER`):
 
-- `jinaai/jina-embeddings-v2-base-code` (default): Use when your corpus contains a meaningful amount of source code (multi-language) mixed with README / design docs. Provides strong cross-domain alignment for code-symbol + natural language queries.
-- `Xenova/bge-base-en-v1.5`: Use when the content is predominantly English natural language (docs, knowledge base) and you want slightly stronger pure text semantic quality.
-- `Xenova/bge-small-en-v1.5`: Use for faster startup / lower memory on constrained machines or when indexing very large repos where throughput matters.
+- `local` (default): fully local workflow after the initial model download via `@huggingface/transformers`. No outbound network calls at query time.
+- `openai`: hosted embeddings via any OpenAI-compatible `/embeddings` API (OpenAI, Mistral, Jina AI, etc.). Use for centralized credentials or larger managed models.
 
-Feel free to experiment—swap via `MODEL_NAME` and rebuild the embedding cache (delete any existing cached vectors if you persist them externally). Changing `EMBEDDING_PROVIDER` also invalidates the persisted cache on purpose.
+**Model** (`MODEL_NAME`):
+
+- `jinaai/jina-embeddings-v2-base-code` (local default): balanced multilingual/code embedding model. Use when your corpus contains a meaningful amount of source code mixed with README / design docs. Strong cross-domain alignment for code-symbol + natural language queries.
+- `Xenova/bge-base-en-v1.5` (local): high-quality English general-purpose text embeddings. Use when content is predominantly English natural language (docs, knowledge base).
+- `Xenova/bge-small-en-v1.5` (local): faster/lighter English model. Use for lower memory or when indexing very large repos where throughput matters more than a few points of recall.
+- `text-embedding-3-small` (openai, **preferred**): fast, cost-efficient hosted model with strong general-purpose quality. Good default when `EMBEDDING_PROVIDER=openai`.
+- `text-embedding-3-large` (openai): higher-dimensional model for maximum recall quality; higher cost and latency than `text-embedding-3-small`.
+
+Feel free to experiment—swap via `MODEL_NAME` and rebuild the embedding cache (delete any existing cached vectors if you persist them externally). Changing `EMBEDDING_PROVIDER` or `MODEL_NAME` invalidates the persisted index on purpose.
 
 ### Chunk sizing guidance
 
