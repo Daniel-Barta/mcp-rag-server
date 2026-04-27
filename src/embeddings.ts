@@ -4,7 +4,7 @@ import { pipeline, FeatureExtractionPipeline } from "@huggingface/transformers";
 const COSINE_EPSILON = 1e-10;
 
 /** Default number of inputs to send in one OpenAI-compatible embeddings request. */
-const DEFAULT_OPENAI_EMBEDDING_BATCH_SIZE = 50;
+const DEFAULT_OPENAI_EMBEDDING_BATCH_SIZE = 200;
 
 /** Default embedding model used when none is specified. */
 export const DEFAULT_EMBEDDING_MODEL = "jinaai/jina-embeddings-v2-base-code";

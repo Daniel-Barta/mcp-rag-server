@@ -197,9 +197,9 @@ export class Indexer {
    * chunk boundaries for embedding similarity.
    *
    * @param text Full input string to divide.
-  * @param size Target maximum characters per chunk (default 2400).
+   * @param size Target maximum characters per chunk (default 2400).
    * @param overlap Number of characters of trailing overlap to retain from the
-  * previous chunk (default 400). Must be < size for forward progress.
+   * previous chunk (default 400). Must be < size for forward progress.
    * @returns Ordered list of chunk strings.
    */
   public static splitChunks(text: string, size = 2400, overlap = 400): string[] {

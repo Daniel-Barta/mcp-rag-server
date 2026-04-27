@@ -120,7 +120,7 @@ Notes:
 
 - `EMBEDDING_API_BASE_URL` should point to the provider's API base (for example `https://api.openai.com/v1`), not the `/embeddings` path itself.
 - `MODEL_NAME` is passed verbatim to the remote embeddings API when `EMBEDDING_PROVIDER=openai`.
-- `EMBEDDING_API_BATCH_SIZE` controls how many chunks are sent per remote embeddings request during indexing. Default: `32`.
+- `EMBEDDING_API_BATCH_SIZE` controls how many chunks are sent per remote embeddings request during indexing. Default: `200`.
 - `TRANSFORMERS_CACHE` is only relevant for local inference.
 
 ### Streamable HTTP mode (recommended for large initial indexes)
@@ -302,6 +302,7 @@ Supported variables:
 - `TRANSFORMERS_CACHE` (optional): cache folder for local model files.
 - `EMBEDDING_API_BASE_URL` (required when `EMBEDDING_PROVIDER=openai`): base URL for the OpenAI-compatible API, such as `https://api.openai.com/v1`, `https://api.mistral.ai/v1`, or your provider-specific equivalent.
 - `EMBEDDING_API_KEY` (required when `EMBEDDING_PROVIDER=openai`): bearer token used for the embeddings API.
+- `EMBEDDING_API_BATCH_SIZE` (optional when `EMBEDDING_PROVIDER=openai`): number of chunks sent per remote embeddings request during indexing. Default: `200`.
 - `ALLOWED_EXT` (optional): comma-separated list of file extensions to index. Default includes common text/code formats plus `pdf`. PDF files are automatically processed: text is extracted once during indexing and cached in a unified `pdf-text-cache.json` file for fast retrieval.
 - `EXCLUDED_FOLDERS` (optional): comma-separated list of folder patterns to exclude from indexing. Supports both exact folder names (e.g., `node_modules,dist,build,.git`) and basic glob patterns (e.g., `**/test/**,**/tests/**`). Files in these folders will be skipped during indexing. Defaults include common build/dependency folders: `node_modules`, `dist`, `build`, `.git`, `target`, `bin`, `obj`, `.cache`, `coverage`, `.nyc_output`.
 - `MCP_TRANSPORT` (optional): `http` or `stdio`.
@@ -317,9 +318,9 @@ Supported variables:
 - `ENABLE_DNS_REBINDING_PROTECTION` (optional, HTTP mode): defaults to `true`; set to `false` to disable host allow‑list checks.
 - `ALLOWED_HOSTS` (optional, HTTP mode): comma-separated list of hosts allowed when DNS rebinding protection is enabled. Defaults include localhost and 127.0.0.1 with/without port.
 - `CHUNK_SIZE` (optional): maximum characters per chunk before embedding (default 2400, roughly 800 tokens depending on tokenizer/model). Larger values reduce total embeddings (faster build, less memory) but can blur fine-grained matches. Typical ranges:
-	- 2100‑2700 (roughly 700‑900 tokens; balanced default)
-	- 3000‑4200 (roughly 1000‑1400 tokens; large prose / long functions; fewer vectors)
-	- 1200‑1800 (roughly 400‑600 tokens; fine‑grained code navigation; more vectors / memory)
+  - 2100‑2700 (roughly 700‑900 tokens; balanced default)
+  - 3000‑4200 (roughly 1000‑1400 tokens; large prose / long functions; fewer vectors)
+  - 1200‑1800 (roughly 400‑600 tokens; fine‑grained code navigation; more vectors / memory)
 - `CHUNK_OVERLAP` (optional): trailing characters carried into the next chunk (default 400, roughly 120 tokens or about 15% of the default chunk size). Recommended 10‑20% of `CHUNK_SIZE` (for example 240‑540 when `CHUNK_SIZE=2400`). Increase slightly (up to ~20‑25%) if you observe answers missing cross‑boundary context; decrease to speed up builds.
 
 Safety caps: `CHUNK_SIZE` is clamped to 8000 and `CHUNK_OVERLAP` to 4000; if overlap >= size it's automatically reduced (logged) to preserve forward progress.
