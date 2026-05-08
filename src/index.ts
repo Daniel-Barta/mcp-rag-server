@@ -45,7 +45,7 @@
  * to Embeddings + Indexer. That separation simplifies future swaps (different models,
  * alt persistence backends, streaming chunk generation, etc.).
  */
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   ListToolsRequestSchema,
   CallToolRequestSchema,
@@ -164,10 +164,11 @@ const pdfExtractor: PdfExtractor = indexer.getPdfExtractor();
  *    (could be narrowed further if desired by reusing ALLOWED_EXT filter there too).
  */
 function createServer() {
-  const server = new Server(
+  const mcpServer = new McpServer(
     { name: "mcp-rag-server", version: APP_VERSION },
     { capabilities: { tools: {} } },
   );
+  const server = mcpServer.server;
 
   // Tool discovery: list available tool names + schemas.
   // Tool discovery endpoint — returns static schemas (cheap & synchronous aside from signature).
@@ -424,7 +425,7 @@ function createServer() {
     throw new McpError(ErrorCode.MethodNotFound, "Unknown method");
   });
 
-  return server;
+  return mcpServer;
 }
 
 // Build the semantic index (blocking startup until ready).

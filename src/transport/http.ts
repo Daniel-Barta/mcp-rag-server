@@ -59,7 +59,7 @@
  */
 import express from "express";
 import { randomUUID } from "node:crypto";
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { statusManager } from "../status";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
@@ -81,7 +81,7 @@ import path from "node:path";
  * @param createServer Factory producing a new, unconnected MCP `Server` instance for each session.
  * @returns Resolves once the HTTP listener is bound and ready.
  */
-export async function startHttpTransport(createServer: () => Server) {
+export async function startHttpTransport(createServer: () => McpServer) {
   const app = express();
   app.use(express.json({ limit: "2mb" }));
 
@@ -133,7 +133,7 @@ export async function startHttpTransport(createServer: () => Server) {
             // Detach handler before calling server.close() because server.close()
             // will attempt transport.close(), which would re-trigger onclose.
             (transport as any).onclose = undefined;
-            server.close();
+            void server.close();
           } catch {
             /* noop */
           }
