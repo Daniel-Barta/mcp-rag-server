@@ -56,9 +56,9 @@ export interface BuildIndexOptions {
   embeddings: Embeddings;
   /** Enable additional progress logging to stderr */
   verbose?: boolean;
-  /** Characters per chunk (default 800). Larger => fewer vectors, less locality */
+  /** Characters per chunk (default 2400). Larger => fewer vectors, less locality */
   chunkSize?: number;
-  /** Trailing character overlap between consecutive chunks (default 120) */
+  /** Trailing character overlap between consecutive chunks (default 400) */
   chunkOverlap?: number;
   /** Optional JSON persistence path (for warm start / incremental updates) */
   storePath?: string;
@@ -114,10 +114,10 @@ export class Indexer {
     this.excludedFolders = opts.excludedFolders ?? [];
     this.embeddings = opts.embeddings;
     this.verbose = !!opts.verbose;
-    this.chunkSize = opts.chunkSize ?? 800;
+    this.chunkSize = opts.chunkSize ?? 2400;
     // Resolve requested overlap then clamp if invalid (must be < chunk size). We compute
     // final value up-front so the property can remain readonly (no later mutation).
-    const requestedOverlap = opts.chunkOverlap ?? 120;
+    const requestedOverlap = opts.chunkOverlap ?? 400;
     this.chunkOverlap =
       requestedOverlap >= this.chunkSize
         ? Math.max(0, Math.floor(this.chunkSize * 0.15)) // conservative fallback (~15%)
@@ -197,12 +197,12 @@ export class Indexer {
    * chunk boundaries for embedding similarity.
    *
    * @param text Full input string to divide.
-   * @param size Target maximum characters per chunk (default 800).
+   * @param size Target maximum characters per chunk (default 2400).
    * @param overlap Number of characters of trailing overlap to retain from the
-   * previous chunk (default 120). Must be < size for forward progress.
+   * previous chunk (default 400). Must be < size for forward progress.
    * @returns Ordered list of chunk strings.
    */
-  public static splitChunks(text: string, size = 800, overlap = 120): string[] {
+  public static splitChunks(text: string, size = 2400, overlap = 400): string[] {
     // NOTE: This splitter is intentionally naïve (pure character length). For
     // better semantic coherence consider: token-aware splitting (tiktoken),
     // markdown / code block boundary detection, or AST / LSP assisted segmenting.
@@ -216,6 +216,42 @@ export class Indexer {
       i += Math.max(1, size - overlap);
     }
     return out;
+  }
+
+  /**
+   * Generate embeddings for a list of docs, using provider-specific batching when available.
+   */
+  private async embedDocs(docs: Doc[], totalDocs = docs.length): Promise<void> {
+    const batchSize = Math.max(1, this.embeddings.getBatchSize());
+
+    for (let i = 0; i < docs.length; i += batchSize) {
+      if (i % 200 === 0) console.error(`[MCP] Embedding ${i}/${totalDocs}`);
+      if (this.verbose && i % 50 === 0) {
+        const pct = ((i / Math.max(1, totalDocs)) * 100).toFixed(1);
+        console.error(`[MCP][verbose] Embedding progress: ${i}/${totalDocs} (${pct}%)`);
+      }
+
+      const batch = docs.slice(i, i + batchSize);
+      const embeddings = await this.embeddings.embedMany(batch.map((doc) => doc.text));
+
+      if (embeddings.length !== batch.length) {
+        throw new Error(
+          `[MCP] Embedding provider returned ${embeddings.length} vectors for ${batch.length} docs.`,
+        );
+      }
+
+      for (let batchIndex = 0; batchIndex < batch.length; batchIndex++) {
+        const doc = batch[batchIndex];
+        const emb = embeddings[batchIndex];
+        if (!doc || !emb) {
+          throw new Error(
+            `[MCP] Missing batch item during embedding assignment at absolute index ${i + batchIndex} (batch index ${batchIndex}).`,
+          );
+        }
+        doc.emb = emb;
+        statusManager.incEmbedded();
+      }
+    }
   }
 
   /**
@@ -234,7 +270,7 @@ export class Indexer {
           storePath: this.storePath,
           chunkSize: this.chunkSize,
           chunkOverlap: this.chunkOverlap,
-          modelName: this.embeddings.getModelName(),
+          modelName: this.embeddings.getModelIdentity(),
           verbose: this.verbose,
         })
       : null;
@@ -248,7 +284,7 @@ export class Indexer {
           docs: this.docs,
           chunkSize: this.chunkSize,
           chunkOverlap: this.chunkOverlap,
-          modelName: this.embeddings.getModelName(),
+          modelName: this.embeddings.getModelIdentity(),
           verbose: this.verbose,
         });
       }
@@ -294,17 +330,7 @@ export class Indexer {
     );
     statusManager.setIndexTotals(fileInfos.length, this.docs.length);
 
-    for (let i = 0; i < this.docs.length; i++) {
-      const doc = this.docs[i];
-      if (!doc) continue; // Should never happen, but satisfies strict type checking
-      if (i % 200 === 0) console.error(`[MCP] Embedding ${i}/${this.docs.length}`);
-      if (this.verbose && i % 50 === 0) {
-        const pct = ((i / Math.max(1, this.docs.length)) * 100).toFixed(1);
-        console.error(`[MCP][verbose] Embedding progress: ${i}/${this.docs.length} (${pct}%)`);
-      }
-      doc.emb = await this.embeddings.embed(doc.text);
-      statusManager.incEmbedded();
-    }
+    await this.embedDocs(this.docs, this.docs.length);
     console.error(`[MCP] Embeddings ready.`);
     statusManager.markReady();
     this.built = true;
@@ -314,7 +340,7 @@ export class Indexer {
         docs: this.docs,
         chunkSize: this.chunkSize,
         chunkOverlap: this.chunkOverlap,
-        modelName: this.embeddings.getModelName(),
+        modelName: this.embeddings.getModelIdentity(),
         verbose: this.verbose,
       });
     }
@@ -489,22 +515,21 @@ export class Indexer {
 
       const chunks = Indexer.splitChunks(content, this.chunkSize, this.chunkOverlap);
       const lineCount = content.split(/\r?\n/).length;
-      for (let idx = 0; idx < chunks.length; idx++) {
-        const text = chunks[idx];
-        if (!text) continue; // Should never happen, but satisfies strict type checking
-        const emb = await this.embeddings.embed(text);
-        this.docs.push({
-          id: `${idCounter++}`,
-          path: file.rel,
-          chunk: idx,
-          text,
-          fileSize: file.size,
-          lineCount,
-          emb,
-        });
-        statusManager.incEmbedded();
-        embeddedChunks++;
+      const newDocs: Doc[] = chunks.map((text, idx) => ({
+        id: `${idCounter + idx}`,
+        path: file.rel,
+        chunk: idx,
+        text,
+        fileSize: file.size,
+        lineCount,
+      }));
+
+      await this.embedDocs(newDocs, newDocs.length);
+      for (const doc of newDocs) {
+        this.docs.push(doc);
       }
+      idCounter += newDocs.length;
+      embeddedChunks += newDocs.length;
     }
     statusManager.setIndexTotals(currentMap.size, this.docs.length);
     // Pre-existing docs lacked embedded increment counts: credit them now.

@@ -130,12 +130,12 @@ export async function getConfig(): Promise<Config> {
   // Verbosity toggle
   const VERBOSE = parseEnvBool(process.env.VERBOSE);
 
-  // Chunk sizing (optional env overrides; defaults 800 / 120)
+  // Chunk sizing (optional env overrides; defaults 2400 / 400)
   // Chunk size impacts recall (too large) vs. precision (too small). Trade‑off is tunable.
-  const CHUNK_SIZE = parseEnvNumber(process.env.CHUNK_SIZE, 800, 1, 8000);
+  const CHUNK_SIZE = parseEnvNumber(process.env.CHUNK_SIZE, 2400, 1, 8000);
 
   // Overlap helps preserve context continuity across semantic chunks.
-  const CHUNK_OVERLAP = parseEnvNumber(process.env.CHUNK_OVERLAP, 120, 0, 4000);
+  const CHUNK_OVERLAP = parseEnvNumber(process.env.CHUNK_OVERLAP, 400, 0, 4000);
 
   // Human‑friendly label used purely in tool descriptions; does not affect disk paths.
   const FOLDER_INFO_NAME = process.env.FOLDER_INFO_NAME?.trim() || "REPO_ROOT";
